@@ -167,9 +167,13 @@ local function handle_openai_spec_data(data_stream, event)
 		-- Handle streamed completion where "delta" contains the content
 		if json.choices and json.choices[1] and json.choices[1].delta then
 			local content = json.choices[1].delta.content
-			if content and content ~= vim.NIL and content ~= "" then
+			if content and content ~= "" then
 				-- Write the streamed content chunk to the editor
-				write_string_at_cursor(content)
+				if content == vim.NIL and json.choices[1].delta.reasoning_content then
+					write_string_at_cursor(json.choices[1].delta.reasoning_content)
+				elseif content ~= vim.NIL then
+					write_string_at_cursor(content)
+				end
 			end
 		elseif json.choices and json.choices[1] and json.choices[1].text then
 			-- This handles non-streamed completions
