@@ -5,6 +5,126 @@ local function get_api_key(name)
 	return os.getenv(name)
 end
 
+local namespace_id = vim.api.nvim_create_namespace("ding_llm_output")
+local last_line = 0 -- Track last line written for typewriter effect
+
+local state = {
+	win_obj = nil,
+	buf = nil, -- Store buffer here to persist it
+	should_close = false,
+}
+-- Add this function to create a floating window
+local function create_output_window()
+	local width = math.floor(vim.o.columns * 0.8)
+	local height = math.floor(vim.o.lines * 0.4)
+	local border_style = {
+		{ "╭", "FloatBorder" }, -- Top-left
+		{ "─", "FloatBorder" }, -- Top
+		{ "╮", "FloatBorder" }, -- Top-right
+		{ "│", "FloatBorder" }, -- Right
+		{ "╯", "FloatBorder" }, -- Bottom-right
+		{ "─", "FloatBorder" }, -- Bottom
+		{ "╰", "FloatBorder" }, -- Bottom-left
+		{ "│", "FloatBorder" }, -- Left
+	}
+
+	print(state, state.buf)
+	local buf = state.buf or vim.api.nvim_create_buf(false, true)
+	state.buf = buf -- Store buffer in state
+
+	local win = vim.api.nvim_open_win(buf, true, {
+		relative = "editor",
+		width = width - 2,
+		height = height - 2,
+		col = (vim.o.columns - width) / 2,
+		row = (vim.o.lines - height) / 2,
+		style = "minimal",
+		border = border_style,
+	})
+
+	-- Set window options
+	vim.wo[win].wrap = true
+	vim.wo[win].number = false
+	vim.wo[win].relativenumber = false
+	vim.bo[buf].buftype = "nofile"
+	vim.bo[buf].modifiable = true
+
+	-- Add close mapping
+	-- vim.api.nvim_buf_set_keymap(buf, "n", "<Esc>", "<CMD>q!<CR>", { noremap = true })
+	-- vim.api.nvim_buf_set_keymap(buf, "n", "q", "<CMD>q!<CR>", { noremap = true })
+
+	vim.api.nvim_buf_set_keymap(buf, "n", "<Esc>", "<CMD>hide<CR>", { noremap = true, silent = true })
+	vim.api.nvim_buf_set_keymap(buf, "n", "q", "<CMD>hide<CR>", { noremap = true, silent = true })
+
+	return {
+		buf = buf,
+		win = win,
+		close = function()
+			if vim.api.nvim_win_is_valid(win) then
+				vim.api.nvim_win_close(win, true)
+			end
+		end,
+	}
+end
+
+function write_to_window(str)
+	vim.schedule(function()
+		if not state.win_obj or not vim.api.nvim_win_is_valid(state.win_obj.win) then
+			state.win_obj = create_output_window()
+		end
+
+		local buf = state.win_obj.buf
+		local current_line_count = vim.api.nvim_buf_line_count(buf)
+		local lines = vim.split(str, "\n", true)
+
+		for i, line in ipairs(lines) do
+			if i == 1 and current_line_count > 0 then
+				local last_line = vim.api.nvim_buf_get_lines(buf, current_line_count - 1, current_line_count, false)[1]
+					or ""
+				vim.api.nvim_buf_set_lines(
+					buf,
+					current_line_count - 1,
+					current_line_count,
+					false,
+					{ last_line .. line }
+				)
+			else
+				vim.api.nvim_buf_set_lines(buf, current_line_count, current_line_count, false, { line })
+				current_line_count = current_line_count + 1
+			end
+		end
+		vim.api.nvim_win_set_cursor(state.win_obj.win, { current_line_count, 0 })
+	end)
+end
+
+local function print_buffer_content(buf)
+	print("bufffffff", buf)
+	local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+	print("Buffer Content:")
+	for _, line in ipairs(lines) do
+		print(line)
+	end
+end
+
+-- Function to reopen the window with the existing buffer
+function M.reopen_window()
+	-- Check if buffer is valid before reopening
+	if not state.buf or not vim.api.nvim_buf_is_valid(state.buf) then
+		print("No buffer to reopen.")
+		return
+	end
+
+	-- Create a new window using the existing buffer
+	state.win_obj = create_output_window()
+	vim.api.nvim_win_set_buf(state.win_obj.win, state.buf)
+end
+
+function M.close_window()
+	if state.win_obj and vim.api.nvim_win_is_valid(state.win_obj.win) then
+		vim.api.nvim_win_close(state.win_obj.win, true)
+	end
+end
+
 function M.get_lines_until_cursor()
 	local current_buffer = vim.api.nvim_get_current_buf()
 	local current_window = vim.api.nvim_get_current_win()
@@ -107,6 +227,8 @@ local group = vim.api.nvim_create_augroup("DING_LLM_AutoGroup", { clear = true }
 local active_job = nil
 
 function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_data_fn)
+	state.buf = nil -- clear global buffer
+
 	vim.api.nvim_clear_autocmds({ group = group })
 	local prompt = get_prompt(opts)
 	local args = make_curl_args_fn(opts, prompt)
@@ -120,7 +242,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 		end
 		local data_match = line:match("^data: (.+)$")
 		if data_match then
-			handle_data_fn(data_match, curr_event_state)
+			handle_data_fn(data_match, curr_event_state, state)
 		end
 	end
 
@@ -135,25 +257,30 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 		on_stdout = function(_, out)
 			parse_and_call(out)
 		end,
-		on_stderr = function(_, _) end,
 		on_exit = function()
+			if state.win_obj then
+				-- Remove temporary typing effects
+				vim.schedule(function()
+					vim.api.nvim_buf_clear_namespace(state.buf, namespace_id, 0, -1)
+					-- Add completion message
+					vim.api.nvim_buf_set_lines(state.buf, -1, -1, true, { "[Stream complete] Press q to close" })
+				end)
+			end
 			active_job = nil
 		end,
 	})
-
-	active_job:start()
 
 	vim.api.nvim_create_autocmd("User", {
 		group = group,
 		pattern = "DING_LLM_Escape",
 		callback = function()
-			if active_job then
-				active_job:shutdown()
-				print("LLM streaming cancelled")
-				active_job = nil
+			if state.win_obj then
+				state.win_obj.close()
 			end
 		end,
 	})
+
+	active_job:start()
 
 	vim.api.nvim_set_keymap("n", "<Esc>", ":doautocmd User DING_LLM_Escape<CR>", { noremap = true, silent = true })
 	return active_job
@@ -167,25 +294,27 @@ local function handle_openai_spec_data(data_stream, event)
 		-- Handle streamed completion where "delta" contains the content
 		if json.choices and json.choices[1] and json.choices[1].delta then
 			local content = json.choices[1].delta.content
-			if content and content ~= "" then
-				-- Write the streamed content chunk to the editor
-				if content == vim.NIL and json.choices[1].delta.reasoning_content then
-					write_string_at_cursor(json.choices[1].delta.reasoning_content)
-				elseif content ~= vim.NIL then
-					write_string_at_cursor(content)
-				end
+			local resoning_content = json.choices[1].delta.reasoning_content
+			-- Write the streamed content chunk to the editor
+			if content == vim.NIL and reasoning_content then
+				--write_string_at_cursor(json.choices[1].delta.reasoning_content)
+				write_to_window(resoning_content)
+			elseif content and content ~= vim.NIL and content ~= "" then
+				--write_string_at_cursor(content)
+				write_to_window(content)
 			end
 		elseif json.choices and json.choices[1] and json.choices[1].text then
 			-- This handles non-streamed completions
 			local content = json.choices[1].text
 			if content then
-				write_string_at_cursor(content)
+				--write_string_at_cursor(content)
+				write_to_window(content)
 			end
 		else
 			print("No content found in the response")
 		end
 	elseif data_stream == "[DONE]" then
-		write_string_at_cursor("\n")
+		--write_string_at_cursor("\n")
 		print("Stream complete")
 	else
 		print("Failed to parse JSON response:", data_stream)
