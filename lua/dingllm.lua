@@ -7,16 +7,17 @@ end
 
 local namespace_id = vim.api.nvim_create_namespace("ding_llm_output")
 local last_line = 0 -- Track last line written for typewriter effect
+local main_win = vim.api.nvim_get_current_win() -- Track main window
 
 local state = {
 	win_obj = nil,
-	buf = nil, -- Store buffer here to persist it
+	buf = vim.api.nvim_create_buf(false, true), -- Store buffer here to persist it
 	should_close = false,
 }
 -- Add this function to create a floating window
 local function create_output_window()
 	local width = math.floor(vim.o.columns * 0.8)
-	local height = math.floor(vim.o.lines * 0.4)
+	local height = math.floor(vim.o.lines * 0.8)
 	local border_style = {
 		{ "╭", "FloatBorder" }, -- Top-left
 		{ "─", "FloatBorder" }, -- Top
@@ -28,7 +29,6 @@ local function create_output_window()
 		{ "│", "FloatBorder" }, -- Left
 	}
 
-	print(state, state.buf)
 	local buf = state.buf or vim.api.nvim_create_buf(false, true)
 	state.buf = buf -- Store buffer in state
 
@@ -49,11 +49,7 @@ local function create_output_window()
 	vim.bo[buf].buftype = "nofile"
 	vim.bo[buf].modifiable = true
 
-	-- Add close mapping
-	-- vim.api.nvim_buf_set_keymap(buf, "n", "<Esc>", "<CMD>q!<CR>", { noremap = true })
-	-- vim.api.nvim_buf_set_keymap(buf, "n", "q", "<CMD>q!<CR>", { noremap = true })
-
-	vim.api.nvim_buf_set_keymap(buf, "n", "<Esc>", "<CMD>hide<CR>", { noremap = true, silent = true })
+	-- vim.api.nvim_buf_set_keymap(buf, "n", "<Esc>", "<CMD>hide<CR>", { noremap = true, silent = true })
 	vim.api.nvim_buf_set_keymap(buf, "n", "q", "<CMD>hide<CR>", { noremap = true, silent = true })
 
 	return {
@@ -98,9 +94,14 @@ function write_to_window(str)
 end
 
 local function print_buffer_content(buf)
-	print("bufffffff", buf)
 	local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 	print("Buffer Content:")
+	for _, line in ipairs(lines) do
+		print(line)
+	end
+end
+
+local function print_lines(lines)
 	for _, line in ipairs(lines) do
 		print(line)
 	end
@@ -119,21 +120,8 @@ function M.reopen_window()
 	vim.api.nvim_win_set_buf(state.win_obj.win, state.buf)
 end
 
-function M.close_window()
-	if state.win_obj and vim.api.nvim_win_is_valid(state.win_obj.win) then
-		vim.api.nvim_win_close(state.win_obj.win, true)
-	end
-end
-
-function M.get_lines_until_cursor()
-	local current_buffer = vim.api.nvim_get_current_buf()
-	local current_window = vim.api.nvim_get_current_win()
-	local cursor_position = vim.api.nvim_win_get_cursor(current_window)
-	local row = cursor_position[1]
-
-	local lines = vim.api.nvim_buf_get_lines(current_buffer, 0, row, true)
-
-	return table.concat(lines, "\n")
+function M.delete_buffer()
+	state.buf = nil
 end
 
 function M.get_visual_selection()
@@ -191,6 +179,25 @@ local function write_string_at_cursor(str)
 	end)
 end
 
+local function get_lines_until_cursor()
+	-- Validate main window reference
+	-- Get main window's buffer and cursor position
+	local main_buf = vim.api.nvim_win_get_buf(main_win)
+	local cursor_pos = vim.api.nvim_win_get_cursor(main_win)
+	local end_row = cursor_pos[1] -- 1-based index
+
+	-- Extract lines from start to cursor position (0-based, exclusive end)
+	local lines = vim.api.nvim_buf_get_lines(main_buf, 0, end_row, true)
+
+	if state.buf and vim.api.nvim_buf_is_valid(state.buf) then
+		local buff_lines = vim.api.nvim_buf_get_lines(state.buf, 0, -1, true)
+		table.insert(lines, "") -- add a separator
+		vim.list_extend(lines, buff_lines)
+	end
+
+	return table.concat(lines, "\n")
+end
+
 local function get_prompt(opts)
 	local replace = opts.replace
 	local visual_lines = M.get_visual_selection()
@@ -208,7 +215,7 @@ local function get_prompt(opts)
 			vim.api.nvim_command("normal! o")
 		end
 	else
-		prompt = M.get_lines_until_cursor()
+		prompt = get_lines_until_cursor()
 	end
 
 	return prompt
@@ -227,7 +234,7 @@ local group = vim.api.nvim_create_augroup("DING_LLM_AutoGroup", { clear = true }
 local active_job = nil
 
 function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_data_fn)
-	state.buf = nil -- clear global buffer
+	-- state.buf = nil -- clear global buffer
 
 	vim.api.nvim_clear_autocmds({ group = group })
 	local prompt = get_prompt(opts)
@@ -334,7 +341,7 @@ local function make_spec_curl_args(opts, prompt, api_key)
 		messages = {
 			{
 				role = "system",
-				content = "You are HINT (Higher INTelligence) the most intelligent computer in the world. You go straight to the answer using code with educational comments. You love to spark a ssense of curiosity and points way to deeper exploration",
+				content = "You are HINT (Higher INTelligence) the most intelligent computer in the world. You go straight to the answer using code with educational comments. You love to spark a sense of curiosity and points way to deeper exploration",
 			},
 			{ role = "user", content = prompt }, -- Replace with actual input from Neovim
 		},
@@ -386,7 +393,7 @@ end
 function M.openai_chat_completion()
 	print("Invoking OpenAI chat completion")
 	vim.api.nvim_command("normal! o")
-	write_string_at_cursor("\n")
+	-- write_string_at_cursor("\n")
 	M.invoke_llm_and_stream_into_editor({
 		url = "https://api.openai.com/v1/chat/completions",
 		model = "gpt-4o",
@@ -398,7 +405,7 @@ end
 function M.deepseek_chat_completion()
 	print("Invoking deepseek chat completion")
 	vim.api.nvim_command("normal! o")
-	write_string_at_cursor("\n")
+	-- write_string_at_cursor("\n")
 	M.invoke_llm_and_stream_into_editor({
 		url = "https://api.deepseek.com/chat/completions",
 		model = "deepseek-reasoner",
