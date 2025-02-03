@@ -15,6 +15,10 @@ local state = {
 	should_close = false,
 }
 -- Add this function to create a floating window
+function M.delete_buffer()
+	state.buf = nil
+end
+
 local function create_output_window()
 	local width = math.floor(vim.o.columns * 0.8)
 	local height = math.floor(vim.o.lines * 0.8)
@@ -50,7 +54,14 @@ local function create_output_window()
 	vim.bo[buf].modifiable = true
 
 	-- vim.api.nvim_buf_set_keymap(buf, "n", "<Esc>", "<CMD>hide<CR>", { noremap = true, silent = true })
-	vim.api.nvim_buf_set_keymap(buf, "n", "q", "<CMD>hide<CR>", { noremap = true, silent = true })
+	vim.api.nvim_buf_set_keymap(buf, "n", "<leader>q", "<CMD>q!<CR>", { noremap = true, silent = true })
+	vim.api.nvim_buf_set_keymap(
+		buf,
+		"n",
+		"<leader>w",
+		"<CMD>hide<CR>",
+		{ noremap = true, silent = true, desc = "Close HINT Window" }
+	)
 
 	return {
 		buf = buf,
@@ -108,7 +119,7 @@ local function print_lines(lines)
 end
 
 -- Function to reopen the window with the existing buffer
-function M.reopen_window()
+function M.open_window()
 	-- Check if buffer is valid before reopening
 	if not state.buf or not vim.api.nvim_buf_is_valid(state.buf) then
 		print("No buffer to reopen.")
@@ -117,11 +128,6 @@ function M.reopen_window()
 
 	-- Create a new window using the existing buffer
 	state.win_obj = create_output_window()
-	vim.api.nvim_win_set_buf(state.win_obj.win, state.buf)
-end
-
-function M.delete_buffer()
-	state.buf = nil
 end
 
 function M.get_visual_selection()
@@ -270,7 +276,13 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 				vim.schedule(function()
 					vim.api.nvim_buf_clear_namespace(state.buf, namespace_id, 0, -1)
 					-- Add completion message
-					vim.api.nvim_buf_set_lines(state.buf, -1, -1, true, { "[Stream complete] Press q to close" })
+					vim.api.nvim_buf_set_lines(
+						state.buf,
+						-1,
+						-1,
+						true,
+						{ "[Stream complete] Press <leader>w to hide or <leader>q to close" }
+					)
 				end)
 			end
 			active_job = nil
@@ -341,7 +353,7 @@ local function make_spec_curl_args(opts, prompt, api_key)
 		messages = {
 			{
 				role = "system",
-				content = "You are HINT (Higher INTelligence) the most intelligent computer in the world. You go straight to the answer using code with educational comments. You love to spark a sense of curiosity and points way to deeper exploration",
+				content = "You are HINT (Higher INTelligence) the most intelligent computer in the world. you answer with code. NO text unless asked to, you write helpfull code comments though",
 			},
 			{ role = "user", content = prompt }, -- Replace with actual input from Neovim
 		},
