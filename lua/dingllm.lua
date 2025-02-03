@@ -20,6 +20,7 @@ function M.delete_buffer()
 end
 
 local function create_output_window()
+	main_win = vim.api.nvim_get_current_win()
 	local width = math.floor(vim.o.columns * 0.8)
 	local height = math.floor(vim.o.lines * 0.8)
 	local border_style = {
@@ -58,7 +59,7 @@ local function create_output_window()
 	vim.api.nvim_buf_set_keymap(
 		buf,
 		"n",
-		"<leader>w",
+		"<leader>h",
 		"<CMD>hide<CR>",
 		{ noremap = true, silent = true, desc = "Close HINT Window" }
 	)
