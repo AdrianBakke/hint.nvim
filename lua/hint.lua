@@ -5,7 +5,7 @@ local function get_api_key(name)
 	return os.getenv(name)
 end
 
-local namespace_id = vim.api.nvim_create_namespace("ding_llm_output")
+local namespace_id = vim.api.nvim_create_namespace("hint_llm_output")
 local last_line = 0 -- Track last line written for typewriter effect
 local main_win = vim.api.nvim_get_current_win() -- Track main window
 
@@ -237,7 +237,7 @@ function M.handle_anthropic_spec_data(data_stream, event_state)
 	end
 end
 
-local group = vim.api.nvim_create_augroup("DING_LLM_AutoGroup", { clear = true })
+local group = vim.api.nvim_create_augroup("hint_LLM_AutoGroup", { clear = true })
 local active_job = nil
 
 function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_data_fn)
@@ -292,7 +292,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 
 	vim.api.nvim_create_autocmd("User", {
 		group = group,
-		pattern = "DING_LLM_Escape",
+		pattern = "hint_LLM_Escape",
 		callback = function()
 			if state.win_obj then
 				state.win_obj.close()
@@ -302,7 +302,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
 
 	active_job:start()
 
-	vim.api.nvim_set_keymap("n", "<Esc>", ":doautocmd User DING_LLM_Escape<CR>", { noremap = true, silent = true })
+	vim.api.nvim_set_keymap("n", "<Esc>", ":doautocmd User hint_LLM_Escape<CR>", { noremap = true, silent = true })
 	return active_job
 end
 
