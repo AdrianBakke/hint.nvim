@@ -39,3 +39,4 @@ read the code dummy
 * make creating prompt with text selected with ctrl-v work []
 * make it possible to stop llm output with <leader>q []
 * possible syntax highlighting inside floating window? <leader>q []
+* create a demo showcasing how to use []
