@@ -1,11 +1,12 @@
 ![hint.nvim Header](hint.png)
-<!--<img src="https://github.com/yacineMTB/dingllm.nvim/assets/10282244/d03ef83d-a5ee-4ddb-928f-742172f3c80c" alt="wordart (6)" style="width:200px;height:100px;">-->
 
 ### hint.nvim
 Free yourself, brothers and sisters
 
-<!--https://github.com/yacineMTB/dingllm.nvim/assets/10282244/07cf5ace-7e01-46e3-bd2f-5bec3bb019cc-->
-
+<video width="640" height="360" controls>
+  <source src="demo.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
 
 ### Credits
 This extension woudln't exist if it weren't for https://github.com/melbaldove/llm.nvim
