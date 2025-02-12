@@ -3,7 +3,7 @@
 ### hint.nvim
 Free yourself, brothers and sisters
 
-[![Demo](https://github.com/AdrianBakke/hint.nvim/blob/master/demo.mp4)
+https://github.com/user-attachments/assets/b54f11d5-8197-4294-a745-7c4524a62447
 
 ### Credits
 This extension woudln't exist if it weren't for https://github.com/melbaldove/llm.nvim
