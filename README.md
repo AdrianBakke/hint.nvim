@@ -3,10 +3,7 @@
 ### hint.nvim
 Free yourself, brothers and sisters
 
-<video width="640" height="360" controls>
-  <source src="demo.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+[![Demo](https://github.com/AdrianBakke/hint.nvim/blob/master/demo.mp4)
 
 ### Credits
 This extension woudln't exist if it weren't for https://github.com/melbaldove/llm.nvim
