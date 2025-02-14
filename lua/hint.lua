@@ -287,6 +287,9 @@ end
 local function handle_openai_spec_data(data_stream, event)
   -- Attempt to decode the JSON data
   local success, json = pcall(vim.json.decode, data_stream)
+  print 'DEBUG'
+  print(json)
+  print(vim.inspect(json))
 
   if success then
     -- Handle streamed completion where "delta" contains the content
@@ -341,6 +344,36 @@ local function make_spec_curl_args(opts, prompt, api_key)
     stream = true,
   }
   local args = { '-N', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', vim.json.encode(data) }
+
+  if api_key then
+    table.insert(args, '-H')
+    table.insert(args, 'Authorization: Bearer ' .. api_key)
+  end
+  table.insert(args, url)
+  return args
+end
+
+local function make_spec_curl_args_reasoner(opts, prompt, api_key)
+  print 'Creating curl arguments for reasoner' -- Debugging: Check if this function is called
+  local url = opts.url
+
+  if not api_key then
+    print 'API key not found' -- Debugging: Check if the API key is set
+  end
+
+  local data = {
+    messages = {
+      {
+        role = 'user',
+        content = 'You are HINT (Higher INTelligence) the most intelligent computer in the world. you answer with code. NO text unless asked to, you write helpfull code comments though '
+          .. prompt,
+      },
+    },
+    model = opts.model,
+    stream = true,
+  }
+  local args = { '-N', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', vim.json.encode(data) }
+
   if api_key then
     table.insert(args, '-H')
     table.insert(args, 'Authorization: Bearer ' .. api_key)
@@ -350,6 +383,11 @@ local function make_spec_curl_args(opts, prompt, api_key)
 end
 
 local function openai_make_curl_args(opts, prompt)
+  local api_key = os.getenv 'OPENAI_API_KEY'
+  return make_spec_curl_args(opts, prompt, api_key)
+end
+
+local function openai_make_curl_args_reasoner(opts, prompt)
   local api_key = os.getenv 'OPENAI_API_KEY'
   return make_spec_curl_args(opts, prompt, api_key)
 end
@@ -387,10 +425,22 @@ function M.openai_chat_completion()
   -- write_string_at_cursor("\n")
   M.invoke_llm_and_stream_into_editor({
     url = 'https://api.openai.com/v1/chat/completions',
-    model = 'gpt-4o',
+    model = 'gtp-4o',
     max_tokens = 200,
     --replace = true,
   }, openai_make_curl_args, handle_openai_spec_data)
+end
+
+function M.openai_chat_completion_reasoner()
+  print 'Invoking OpenAI chat completion'
+  vim.api.nvim_command 'normal! o'
+  -- write_string_at_cursor("\n")
+  M.invoke_llm_and_stream_into_editor({
+    url = 'https://api.openai.com/v1/chat/completions',
+    model = 'o1-mini',
+    max_tokens = 200,
+    --replace = true,
+  }, openai_make_curl_args_reasoner, handle_openai_spec_data)
 end
 
 function M.deepseek_chat_completion()
