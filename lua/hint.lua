@@ -389,7 +389,7 @@ end
 
 local function openai_make_curl_args_reasoner(opts, prompt)
   local api_key = os.getenv 'OPENAI_API_KEY'
-  return make_spec_curl_args(opts, prompt, api_key)
+  return make_spec_curl_args_reasoner(opts, prompt, api_key)
 end
 
 local function deepseek_make_curl_args(opts, prompt)
