@@ -287,9 +287,6 @@ end
 local function handle_openai_spec_data(data_stream, event)
   -- Attempt to decode the JSON data
   local success, json = pcall(vim.json.decode, data_stream)
-  print 'DEBUG'
-  print(json)
-  print(vim.inspect(json))
 
   if success then
     -- Handle streamed completion where "delta" contains the content
@@ -350,6 +347,7 @@ local function make_spec_curl_args(opts, prompt, api_key)
     table.insert(args, 'Authorization: Bearer ' .. api_key)
   end
   table.insert(args, url)
+  print(vim.inspect(args))
   return args
 end
 
@@ -414,7 +412,6 @@ local function anthropic_make_curl_args(opts, prompt)
     table.insert(args, '-H')
     table.insert(args, 'anthropic-version: 2023-06-01')
   end
-  table.insert(args, url)
   return args
 end
 
@@ -425,7 +422,7 @@ function M.openai_chat_completion()
   -- write_string_at_cursor("\n")
   M.invoke_llm_and_stream_into_editor({
     url = 'https://api.openai.com/v1/chat/completions',
-    model = 'gtp-4o',
+    model = 'gpt-4o',
     max_tokens = 200,
     --replace = true,
   }, openai_make_curl_args, handle_openai_spec_data)
