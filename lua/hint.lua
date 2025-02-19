@@ -53,10 +53,11 @@ local function create_output_window()
   vim.wo[win].relativenumber = false
   vim.bo[buf].buftype = 'nofile'
   vim.bo[buf].modifiable = true
+  vim.bo[buf].filetype = 'markdown'
 
   -- vim.api.nvim_buf_set_keymap(buf, "n", "<Esc>", "<CMD>hide<CR>", { noremap = true, silent = true })
-  vim.api.nvim_buf_set_keymap(buf, 'n', '<leader>q', '<CMD>q!<CR>', { noremap = true, silent = true })
-  vim.api.nvim_buf_set_keymap(buf, 'n', '<leader>h', '<CMD>hide<CR>', { noremap = true, silent = true, desc = 'Close HINT Window' })
+  vim.api.nvim_buf_set_keymap(buf, 'n', 'q', '<CMD>q!<CR>', { noremap = true, silent = true })
+  vim.api.nvim_buf_set_keymap(buf, 'n', '<C-j>', '<CMD>hide<CR>', { noremap = true, silent = true, desc = 'Close HINT Window' })
 
   return {
     buf = buf,
@@ -261,7 +262,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
         vim.schedule(function()
           vim.api.nvim_buf_clear_namespace(state.buf, namespace_id, 0, -1)
           -- Add completion message
-          vim.api.nvim_buf_set_lines(state.buf, -1, -1, true, { '[Stream complete] Press <leader>w to hide or <leader>q to close' })
+          vim.api.nvim_buf_set_lines(state.buf, -1, -1, true, { '[Stream complete] Press CTRL-j to hide or q to close' })
         end)
       end
       active_job = nil
@@ -332,7 +333,7 @@ local function make_spec_curl_args(opts, prompt, api_key)
     messages = {
       {
         role = 'system',
-        content = 'You are HINT (Higher INTelligence) the most intelligent computer in the world. you answer with code. NO text unless asked to, you write helpfull code comments though',
+        content = 'You are HINT (Higher INTelligence) the most intelligent computer in the world. you answer with code and bullet points. avoid writing code that do not contain any changes. answer in markdown. ',
       },
       { role = 'user', content = prompt }, -- Replace with actual input from Neovim
     },
@@ -363,7 +364,7 @@ local function make_spec_curl_args_reasoner(opts, prompt, api_key)
     messages = {
       {
         role = 'user',
-        content = 'You are HINT (Higher INTelligence) the most intelligent computer in the world. you answer with code. NO text unless asked to, you write helpfull code comments though '
+        content = 'You are HINT (Higher INTelligence) the most intelligent computer in the world. you answer with code and bullet points. avoid writing code that do not contain any changes. answer in markdown. '
           .. prompt,
       },
     },
