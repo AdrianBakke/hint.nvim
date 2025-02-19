@@ -1,74 +1,173 @@
 local M = {}
 local Job = require 'plenary.job'
 
+-- Utility Functions
 local function get_api_key(name)
   return os.getenv(name)
 end
 
-local namespace_id = vim.api.nvim_create_namespace 'hint_llm_output'
-local last_line = 0 -- Track last line written for typewriter effect
 local main_win = vim.api.nvim_get_current_win() -- Track main window
 
+-- Namespace for highlights (if needed in future)
+local namespace_id = vim.api.nvim_create_namespace 'hint_llm_output'
+
+-- State Management
 local state = {
   win_obj = nil,
-  buf = vim.api.nvim_create_buf(false, true), -- Store buffer here to persist it
   should_close = false,
+  tabs = {},
+  current_tab = 1,
+  active_job = nil,
 }
--- Add this function to create a floating window
-function M.delete_buffer()
-  state.buf = nil
-end
 
-local function create_output_window()
-  main_win = vim.api.nvim_get_current_win()
+local tab_buf = vim.api.nvim_create_buf(false, true)
+
+local function create_or_update_window()
+  -- Check if there is at least one tab
+  if #state.tabs == 0 then
+    table.insert(state.tabs, { name = 'Tab 1', buf = vim.api.nvim_create_buf(false, true) })
+    state.current_tab = 1
+  end
+
+  local current_tab = state.tabs[state.current_tab]
+  local buf = current_tab.buf
+
+  -- Define dimensions for the windows
   local width = math.floor(vim.o.columns * 0.8)
   local height = math.floor(vim.o.lines * 0.8)
-  local border_style = {
-    { '╭', 'FloatBorder' }, -- Top-left
-    { '─', 'FloatBorder' }, -- Top
-    { '╮', 'FloatBorder' }, -- Top-right
-    { '│', 'FloatBorder' }, -- Right
-    { '╯', 'FloatBorder' }, -- Bottom-right
-    { '─', 'FloatBorder' }, -- Bottom
-    { '╰', 'FloatBorder' }, -- Bottom-left
-    { '│', 'FloatBorder' }, -- Left
-  }
 
-  local buf = state.buf or vim.api.nvim_create_buf(false, true)
-  state.buf = buf -- Store buffer in state
-
+  -- Create window for the main content
   local win = vim.api.nvim_open_win(buf, true, {
     relative = 'editor',
     width = width - 2,
     height = height - 2,
-    col = (vim.o.columns - width) / 2,
-    row = (vim.o.lines - height) / 2,
+    col = math.floor((vim.o.columns - width) / 2),
+    row = math.floor((vim.o.lines - height) / 2) + 1, -- Adjust row to accommodate tab bar
     style = 'minimal',
-    border = border_style,
+    border = {
+      { '╭', 'FloatBorder' },
+      { '─', 'FloatBorder' },
+      { '╮', 'FloatBorder' },
+      { '│', 'FloatBorder' },
+      { '╯', 'FloatBorder' },
+      { '─', 'FloatBorder' },
+      { '╰', 'FloatBorder' },
+      { '│', 'FloatBorder' },
+    },
   })
 
-  -- Set window options
-  vim.wo[win].wrap = true
-  vim.wo[win].number = false
-  vim.wo[win].relativenumber = false
-  vim.bo[buf].buftype = 'nofile'
-  vim.bo[buf].modifiable = true
-  vim.bo[buf].filetype = 'markdown'
+  -- Create window for the tab bar
+  local tab_win = vim.api.nvim_open_win(tab_buf, false, {
+    relative = 'editor',
+    width = width,
+    height = 1, -- Only one line for the tab bar
+    col = math.floor((vim.o.columns - width) / 2),
+    row = math.floor((vim.o.lines - height) / 2), -- Position above the main content window
+    style = 'minimal',
+    border = 'none',
+  })
 
-  -- vim.api.nvim_buf_set_keymap(buf, "n", "<Esc>", "<CMD>hide<CR>", { noremap = true, silent = true })
-  vim.api.nvim_buf_set_keymap(buf, 'n', 'q', '<CMD>q!<CR>', { noremap = true, silent = true })
-  vim.api.nvim_buf_set_keymap(buf, 'n', '<C-j>', '<CMD>hide<CR>', { noremap = true, silent = true, desc = 'Close HINT Window' })
-
-  return {
-    buf = buf,
+  -- Store window objects
+  state.win_obj = {
     win = win,
+    tab_win = tab_win,
     close = function()
       if vim.api.nvim_win_is_valid(win) then
         vim.api.nvim_win_close(win, true)
       end
+      if vim.api.nvim_win_is_valid(tab_win) then
+        vim.api.nvim_win_close(tab_win, true)
+      end
+      state.win_obj = nil
     end,
   }
+
+  -- Set window options for the main content
+  vim.wo[state.win_obj.win].wrap = true
+  vim.wo[state.win_obj.win].number = false
+  vim.wo[state.win_obj.win].relativenumber = false
+  vim.bo[buf].buftype = 'nofile'
+  vim.bo[buf].modifiable = true
+  vim.bo[buf].filetype = 'markdown'
+
+  vim.api.nvim_buf_set_keymap(buf, 'n', 'q', '', { callback = M.close_current_tab, noremap = true, silent = true })
+  vim.api.nvim_buf_set_keymap(buf, 'n', '<Tab>', '', { callback = M.next_tab, noremap = true, silent = true })
+  vim.api.nvim_buf_set_keymap(buf, 'n', '<S-Tab>', '', { callback = M.prev_tab, noremap = true, silent = true })
+  vim.api.nvim_buf_set_keymap(buf, 'n', '<C-j>', '', { callback = M.toggle_window, noremap = true, silent = true })
+  vim.api.nvim_buf_set_keymap(buf, 'n', '<leader>tt', '', { callback = M.create_new_tab, noremap = true, silent = true })
 end
+
+-- Function to Render Tabs
+local function render_tabs()
+  if not state.win_obj or not vim.api.nvim_win_is_valid(state.win_obj.tab_win) then
+    return
+  end
+
+  -- Render Tab Bar in the tab buffer
+  local tab_line = ' '
+  for i, tab in ipairs(state.tabs) do
+    if i == state.current_tab then
+      tab_line = tab_line .. '  ' .. tab.name .. '  '
+    else
+      tab_line = tab_line .. '  ' .. tab.name .. '  '
+    end
+  end
+  vim.api.nvim_buf_set_lines(tab_buf, 0, -1, false, { tab_line })
+  vim.api.nvim_buf_add_highlight(tab_buf, namespace_id, 'TabLine', 0, 0, -1)
+end
+
+-- local function render_tabs()
+--   if not state.win_obj or not vim.api.nvim_win_is_valid(state.win_obj.tab_win) then
+--     return
+--   end
+--
+--   local current_tab = state.tabs[state.current_tab]
+--   local buf = current_tab.buf
+--
+--   -- Allow modifications
+--   vim.api.nvim_buf_set_option(buf, 'modifiable', true)
+--
+--   -- Fetch existing content
+--   local existing_content = vim.api.nvim_buf_get_lines(buf, 1, -1, false)
+--
+--   -- Render Tab Bar on a Single Line
+--   local tab_line = ' '
+--   for i, tab in ipairs(state.tabs) do
+--     if i == state.current_tab then
+--       tab_line = tab_line .. '  ' .. tab.name .. '  '
+--     else
+--       tab_line = tab_line .. '  ' .. tab.name .. '  '
+--     end
+--   end
+--   vim.api.nvim_buf_set_lines(tab_buf, 0, -1, false, { tab_line })
+--   vim.api.nvim_buf_add_highlight(tab_buf, namespace_id, 'TabLine', 0, 0, -1)
+--
+--   -- Append existing content after the tab line
+--   vim.api.nvim_buf_set_lines(buf, 1, -1, false, existing_content)
+--
+--   -- Ensure the cursor is placed on the line following the tab line
+--   local total_lines = vim.api.nvim_buf_line_count(buf)
+--
+--   if total_lines < 2 then
+--     -- Insert an empty line if there's no content below the tab line
+--     vim.api.nvim_buf_set_lines(buf, 1, 1, false, { '' })
+--     total_lines = 2
+--   end
+--
+--   -- Set cursor to the first line of content below the tab line
+--   vim.api.nvim_win_set_cursor(state.win_obj.win, { 2, 0 })
+--
+--   -- Set autocommand to prevent moving the cursor to the tab line
+--   vim.api.nvim_create_autocmd('CursorMoved', {
+--     buffer = buf,
+--     callback = function()
+--       local cursor = vim.api.nvim_win_get_cursor(state.win_obj.win)
+--       if cursor[1] == 1 then
+--         vim.api.nvim_win_set_cursor(state.win_obj.win, { 2, 0 })
+--       end
+--     end,
+--   })
+-- end
 
 function write_to_window(str)
   vim.schedule(function()
@@ -76,7 +175,13 @@ function write_to_window(str)
       state.win_obj = create_output_window()
     end
 
-    local buf = state.win_obj.buf
+    local active_tab = state.tabs[state.current_tab]
+    if not active_tab or not vim.api.nvim_buf_is_valid(active_tab.buf) then
+      return
+    end
+
+    local buf = active_tab.buf
+
     local current_line_count = vim.api.nvim_buf_line_count(buf)
     local lines = vim.split(str, '\n', true)
 
@@ -93,30 +198,74 @@ function write_to_window(str)
   end)
 end
 
-local function print_buffer_content(buf)
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  print 'Buffer Content:'
-  for _, line in ipairs(lines) do
-    print(line)
-  end
-end
-
-local function print_lines(lines)
-  for _, line in ipairs(lines) do
-    print(line)
-  end
-end
-
--- Function to reopen the window with the existing buffer
-function M.open_window()
-  -- Check if buffer is valid before reopening
-  if not state.buf or not vim.api.nvim_buf_is_valid(state.buf) then
-    print 'No buffer to reopen.'
+-- Public Functions for Tab Navigation
+function M.next_tab()
+  if #state.tabs == 0 then
     return
   end
+  state.current_tab = state.current_tab % #state.tabs + 1
+  create_or_update_window()
+  render_tabs()
+end
 
-  -- Create a new window using the existing buffer
-  state.win_obj = create_output_window()
+function M.prev_tab()
+  if #state.tabs == 0 then
+    return
+  end
+  state.current_tab = (state.current_tab - 2) % #state.tabs + 1
+  create_or_update_window()
+  render_tabs()
+end
+
+-- Function to Close Current Tab
+function M.close_current_tab()
+  if #state.tabs == 0 then
+    return
+  end
+  local tab = table.remove(state.tabs, state.current_tab)
+  if vim.api.nvim_buf_is_valid(tab.buf) then
+    vim.api.nvim_buf_delete(tab.buf, { force = true })
+  end
+  if state.current_tab > #state.tabs then
+    state.current_tab = #state.tabs
+  end
+  if #state.tabs == 0 then
+    state.win_obj.close()
+  else
+    create_or_update_window()
+    render_tabs()
+  end
+end
+
+-- Function to Toggle Floating Window
+function M.toggle_window()
+  if state.win_obj and vim.api.nvim_win_is_valid(state.win_obj.win) then
+    state.win_obj.close()
+  else
+    create_or_update_window()
+    render_tabs()
+  end
+end
+
+local function add_tab(name) end
+
+function M.create_new_tab(name)
+  local buf = vim.api.nvim_create_buf(false, true)
+  table.insert(state.tabs, { name = 'Tab ' .. (#state.tabs + 1), buf = buf })
+  state.current_tab = #state.tabs
+  create_or_update_window()
+  render_tabs()
+  return buf
+end
+
+-- Function to Switch Tabs
+local function switch_tab(index)
+  if index < 1 or index > #state.tabs then
+    return
+  end
+  state.current_tab = index
+  create_or_update_window()
+  render_tabs()
 end
 
 function M.get_visual_selection()
@@ -154,23 +303,6 @@ function M.get_visual_selection()
   end
 end
 
-local function write_string_at_cursor(str)
-  vim.schedule(function()
-    local current_window = vim.api.nvim_get_current_win()
-    local cursor_position = vim.api.nvim_win_get_cursor(current_window)
-    local row, col = cursor_position[1], cursor_position[2]
-
-    local lines = vim.split(str, '\n')
-
-    vim.cmd 'undojoin'
-    vim.api.nvim_put(lines, 'c', true, true)
-
-    local num_lines = #lines
-    local last_line_length = #lines[num_lines]
-    vim.api.nvim_win_set_cursor(current_window, { row + num_lines - 1, col + last_line_length })
-  end)
-end
-
 local function get_lines_until_cursor()
   -- Validate main window reference
   -- Get main window's buffer and cursor position
@@ -181,161 +313,60 @@ local function get_lines_until_cursor()
   -- Extract lines from start to cursor position (0-based, exclusive end)
   local lines = vim.api.nvim_buf_get_lines(main_buf, 0, end_row, true)
 
-  if state.buf and vim.api.nvim_buf_is_valid(state.buf) then
-    local buff_lines = vim.api.nvim_buf_get_lines(state.buf, 0, -1, true)
+  if state.tabs and vim.api.nvim_buf_is_valid(state.tabs[state.current_tab].buf) then
+    local buff_lines = vim.api.nvim_buf_get_lines(state.tabs[state.current_tab].buf, 0, -1, true)
     table.insert(lines, '') -- add a separator
     vim.list_extend(lines, buff_lines)
   end
+  print('SUPERDEBIG', vim.inspect(lines))
 
   return table.concat(lines, '\n')
 end
 
-local function get_prompt(opts)
-  local replace = opts.replace
-  local visual_lines = M.get_visual_selection()
-  local prompt = ''
+-- Function to Create New Tab via Leader Shortcut
 
-  if visual_lines then
-    prompt = table.concat(visual_lines, '\n')
-    if replace then
-      vim.api.nvim_command 'normal! d'
-      vim.api.nvim_command 'normal! k'
-    else
-      local _, erow, ecol = unpack(vim.fn.getpos 'v')
-      vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', false, true, true), 'nx', false)
-      vim.api.nvim_win_set_cursor(0, { erow, ecol })
-      vim.api.nvim_command 'normal! o'
-    end
-  else
-    prompt = get_lines_until_cursor()
-  end
-
-  return prompt
-end
-
-function M.handle_anthropic_spec_data(data_stream, event_state)
+-- Function to Handle Data from Anthropics
+local function handle_anthropic_spec_data(data_stream, event_state)
   if event_state == 'content_block_delta' then
     local json = vim.json.decode(data_stream)
     if json.delta and json.delta.text then
-      write_string_at_cursor(json.delta.text)
+      write_to_window(json.delta.text)
     end
   end
 end
 
-local group = vim.api.nvim_create_augroup('hint_LLM_AutoGroup', { clear = true })
-local active_job = nil
-
-function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_data_fn)
-  -- state.buf = nil -- clear global buffer
-
-  vim.api.nvim_clear_autocmds { group = group }
-  local prompt = get_prompt(opts)
-  local args = make_curl_args_fn(opts, prompt)
-  local curr_event_state = nil
-
-  local function parse_and_call(line)
-    local event = line:match '^event: (.+)$'
-    if event then
-      curr_event_state = event
-      return
-    end
-    local data_match = line:match '^data: (.+)$'
-    if data_match then
-      handle_data_fn(data_match, curr_event_state, state)
-    end
-  end
-
-  if active_job then
-    active_job:shutdown()
-    active_job = nil
-  end
-
-  active_job = Job:new {
-    command = 'curl',
-    args = args,
-    on_stdout = function(_, out)
-      parse_and_call(out)
-    end,
-    on_exit = function()
-      if state.win_obj then
-        -- Remove temporary typing effects
-        vim.schedule(function()
-          vim.api.nvim_buf_clear_namespace(state.buf, namespace_id, 0, -1)
-          -- Add completion message
-          vim.api.nvim_buf_set_lines(state.buf, -1, -1, true, { '[Stream complete] Press CTRL-j to hide or q to close' })
-        end)
-      end
-      active_job = nil
-    end,
-  }
-
-  vim.api.nvim_create_autocmd('User', {
-    group = group,
-    pattern = 'hint_LLM_Escape',
-    callback = function()
-      if state.win_obj then
-        state.win_obj.close()
-      end
-    end,
-  })
-
-  active_job:start()
-
-  vim.api.nvim_set_keymap('n', '<Esc>', ':doautocmd User hint_LLM_Escape<CR>', { noremap = true, silent = true })
-  return active_job
-end
-
+-- Function to Handle OpenAI Data
 local function handle_openai_spec_data(data_stream, event)
-  -- Attempt to decode the JSON data
   local success, json = pcall(vim.json.decode, data_stream)
 
   if success then
-    -- Handle streamed completion where "delta" contains the content
-    if json.choices and json.choices[1] and json.choices[1].delta then
-      local content = json.choices[1].delta.content
-      local resoning_content = json.choices[1].delta.reasoning_content
-      -- Write the streamed content chunk to the editor
-      if content == vim.NIL and reasoning_content then
-        --write_string_at_cursor(json.choices[1].delta.reasoning_content)
-        write_to_window(resoning_content)
-      elseif content and content ~= vim.NIL and content ~= '' then
-        --write_string_at_cursor(content)
-        write_to_window(content)
-      end
-    elseif json.choices and json.choices[1] and json.choices[1].text then
-      -- This handles non-streamed completions
-      local content = json.choices[1].text
-      if content then
-        --write_string_at_cursor(content)
-        write_to_window(content)
+    if json.choices and json.choices[1] then
+      local choice = json.choices[1]
+      if choice.delta and choice.delta.content then
+        write_to_window(choice.delta.content)
+      elseif choice.text then
+        write_to_window(choice.text)
       end
     else
       print 'No content found in the response'
     end
   elseif data_stream == '[DONE]' then
-    --write_string_at_cursor("\n")
     print 'Stream complete'
   else
     print('Failed to parse JSON response:', data_stream)
   end
 end
 
--- Function to create the curl arguments for OpenAI requests
+-- Functions to Create Curl Arguments
 local function make_spec_curl_args(opts, prompt, api_key)
-  print 'Creating curl arguments' -- Debugging: Check if this function is called
   local url = opts.url
-
-  if not api_key then
-    print 'API key not found' -- Debugging: Check if the API key is set
-  end
-
   local data = {
     messages = {
       {
         role = 'system',
-        content = 'You are HINT (Higher INTelligence) the most intelligent computer in the world. you answer with code and bullet points. avoid writing code that do not contain any changes. answer in markdown. ',
+        content = 'You are HINT (Higher INTelligence) the most intelligent computer in the world. You answer with code and bullet points. Avoid writing code that do not contain any changes. Answer in markdown.',
       },
-      { role = 'user', content = prompt }, -- Replace with actual input from Neovim
+      { role = 'user', content = prompt },
     },
     model = opts.model,
     temperature = 0.7,
@@ -348,23 +379,16 @@ local function make_spec_curl_args(opts, prompt, api_key)
     table.insert(args, 'Authorization: Bearer ' .. api_key)
   end
   table.insert(args, url)
-  print(vim.inspect(args))
   return args
 end
 
 local function make_spec_curl_args_reasoner(opts, prompt, api_key)
-  print 'Creating curl arguments for reasoner' -- Debugging: Check if this function is called
   local url = opts.url
-
-  if not api_key then
-    print 'API key not found' -- Debugging: Check if the API key is set
-  end
-
   local data = {
     messages = {
       {
         role = 'user',
-        content = 'You are HINT (Higher INTelligence) the most intelligent computer in the world. you answer with code and bullet points. avoid writing code that do not contain any changes. answer in markdown. '
+        content = 'You are HINT (Higher INTelligence) the most intelligent computer in the world. You answer with code and bullet points. Avoid writing code that do not contain any changes. Answer in markdown. '
           .. prompt,
       },
     },
@@ -382,17 +406,17 @@ local function make_spec_curl_args_reasoner(opts, prompt, api_key)
 end
 
 local function openai_make_curl_args(opts, prompt)
-  local api_key = os.getenv 'OPENAI_API_KEY'
+  local api_key = get_api_key 'OPENAI_API_KEY'
   return make_spec_curl_args(opts, prompt, api_key)
 end
 
 local function openai_make_curl_args_reasoner(opts, prompt)
-  local api_key = os.getenv 'OPENAI_API_KEY'
+  local api_key = get_api_key 'OPENAI_API_KEY'
   return make_spec_curl_args_reasoner(opts, prompt, api_key)
 end
 
 local function deepseek_make_curl_args(opts, prompt)
-  local api_key = os.getenv 'DEEPSEEK_API_KEY'
+  local api_key = get_api_key 'DEEPSEEK_API_KEY'
   return make_spec_curl_args(opts, prompt, api_key)
 end
 
@@ -400,7 +424,7 @@ local function anthropic_make_curl_args(opts, prompt)
   local url = opts.url
   local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
   local data = {
-    system = system_prompt,
+    system = 'You are HINT (Higher INTelligence) the most intelligent computer in the world. You answer with code and bullet points. Avoid writing code that do not contain any changes. Answer in markdown.',
     messages = { { role = 'user', content = prompt } },
     model = opts.model,
     stream = true,
@@ -416,40 +440,140 @@ local function anthropic_make_curl_args(opts, prompt)
   return args
 end
 
--- Function to invoke OpenAI chat-based completion
+-- Function to Get Prompt from Visual Selection or Cursor
+local function get_prompt(opts)
+  local replace = opts.replace
+  local visual_lines = M.get_visual_selection()
+  local prompt = ''
+
+  print 'SHOUDL BE CALLESD 2'
+  if visual_lines then
+    prompt = table.concat(visual_lines, '\n')
+    if replace then
+      vim.api.nvim_command 'normal! d'
+      vim.api.nvim_command 'normal! k'
+    else
+      local _, erow, ecol = unpack(vim.fn.getpos '.')
+      vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', false, true, true), 'nx', false)
+      vim.api.nvim_win_set_cursor(0, { erow, ecol })
+      print 'SHOUDL BE CALLESD'
+      vim.api.nvim_command 'normal! o'
+    end
+  else
+    prompt = get_lines_until_cursor()
+  end
+
+  return prompt
+end
+
+-- Function to Get Lines Until Cursor
+local function get_lines_until_cursor()
+  local main_buf = vim.api.nvim_win_get_buf(state.main_win or vim.api.nvim_get_current_win())
+  local cursor_pos = vim.api.nvim_win_get_cursor(state.main_win or vim.api.nvim_get_current_win())
+  local end_row = cursor_pos[1]
+
+  local lines = vim.api.nvim_buf_get_lines(main_buf, 0, end_row, true)
+
+  if state.buf and vim.api.nvim_buf_is_valid(state.buf) then
+    local buff_lines = vim.api.nvim_buf_get_lines(state.buf, 0, -1, true)
+    table.insert(lines, '') -- add a separator
+    vim.list_extend(lines, buff_lines)
+  end
+
+  return table.concat(lines, '\n')
+end
+
+-- Function to Invoke LLM and Stream into Editor
+function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_data_fn)
+  vim.api.nvim_clear_autocmds { group = group }
+  local prompt = get_prompt(opts)
+  local args = make_curl_args_fn(opts, prompt)
+  local curr_event_state = nil
+
+  local function parse_and_call(line)
+    local event = line:match '^event: (.+)$'
+    if event then
+      curr_event_state = event
+      return
+    end
+    local data_match = line:match '^data: (.+)$'
+    if data_match then
+      handle_data_fn(data_match, curr_event_state)
+    end
+  end
+
+  if state.active_job then
+    state.active_job:shutdown()
+    state.active_job = nil
+  end
+
+  state.active_job = Job:new {
+    command = 'curl',
+    args = args,
+    on_stdout = function(_, out)
+      parse_and_call(out)
+    end,
+    on_exit = function()
+      if state.win_obj then
+        vim.schedule(function()
+          vim.api.nvim_buf_clear_namespace(state.tabs[state.current_tab].buf, namespace_id, 0, -1)
+          vim.api.nvim_buf_set_lines(state.tabs[state.current_tab].buf, -1, -1, true, { '[Stream complete] Press CTRL-j to hide or q to close' })
+        end)
+      end
+      state.active_job = nil
+    end,
+  }
+
+  state.main_win = vim.api.nvim_get_current_win()
+  state.active_job:start()
+
+  vim.api.nvim_set_keymap('n', '<Esc>', ':doautocmd User hint_LLM_Escape<CR>', { noremap = true, silent = true })
+end
+
+-- Function to Write String at Cursor
+local function write_string_at_cursor(str)
+  vim.schedule(function()
+    local current_window = vim.api.nvim_get_current_win()
+    local cursor_position = vim.api.nvim_win_get_cursor(current_window)
+    local row, col = cursor_position[1], cursor_position[2]
+
+    local lines = vim.split(str, '\n')
+    vim.cmd 'undojoin'
+    vim.api.nvim_put(lines, 'c', true, true)
+
+    local num_lines = #lines
+    local last_line_length = #lines[num_lines]
+    vim.api.nvim_win_set_cursor(current_window, { row + num_lines - 1, col + last_line_length })
+  end)
+end
+
+-- Function to OpenAI Chat Completion
 function M.openai_chat_completion()
-  print 'Invoking OpenAI chat completion'
   vim.api.nvim_command 'normal! o'
-  -- write_string_at_cursor("\n")
   M.invoke_llm_and_stream_into_editor({
     url = 'https://api.openai.com/v1/chat/completions',
-    model = 'gpt-4o',
+    model = 'gpt-4',
     max_tokens = 200,
-    --replace = true,
   }, openai_make_curl_args, handle_openai_spec_data)
 end
 
+-- Function to OpenAI Chat Completion Reasoner
 function M.openai_chat_completion_reasoner()
-  print 'Invoking OpenAI chat completion'
   vim.api.nvim_command 'normal! o'
-  -- write_string_at_cursor("\n")
   M.invoke_llm_and_stream_into_editor({
     url = 'https://api.openai.com/v1/chat/completions',
-    model = 'o1-mini',
+    model = 'gpt-4-reasoner',
     max_tokens = 200,
-    --replace = true,
   }, openai_make_curl_args_reasoner, handle_openai_spec_data)
 end
 
+-- Function to DeepSeek Chat Completion
 function M.deepseek_chat_completion()
-  print 'Invoking deepseek chat completion'
   vim.api.nvim_command 'normal! o'
-  -- write_string_at_cursor("\n")
   M.invoke_llm_and_stream_into_editor({
     url = 'https://api.deepseek.com/chat/completions',
     model = 'deepseek-reasoner',
     max_tokens = 200,
-    --replace = true,
   }, deepseek_make_curl_args, handle_openai_spec_data)
 end
 
