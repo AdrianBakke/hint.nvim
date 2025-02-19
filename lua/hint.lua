@@ -32,7 +32,6 @@ local function create_or_update_window()
   local current_tab = state.tabs[state.current_tab]
   local buf = current_tab.buf
 
-  print('DBE', vim.inspect(state.win_obj))
   if state.win_obj == nil then
     -- Define dimensions for the windows
     local width = math.floor(vim.o.columns * 0.8)
@@ -76,12 +75,11 @@ local function create_or_update_window()
       close = function()
         if vim.api.nvim_win_is_valid(win) then
           vim.api.nvim_win_close(win, true)
-          print 'close win'
         end
         if vim.api.nvim_win_is_valid(tab_win) then
           vim.api.nvim_win_close(tab_win, true)
-          print 'tabclosen'
         end
+        state.win_obj = nil -- Set to nil after closing
       end,
     }
 
@@ -100,14 +98,9 @@ local function create_or_update_window()
   vim.api.nvim_buf_set_keymap(buf, 'n', '<C-j>', '', { callback = M.toggle_window, noremap = true, silent = true })
   vim.api.nvim_buf_set_keymap(buf, 'n', '<leader>tt', '', { callback = M.create_new_tab, noremap = true, silent = true })
 
-  print(vim.inspect(state.win_obj))
-
-  print(vim.api.nvim_win_is_valid(state.win_obj.win))
-  if vim.api.nvim_win_is_valid(state.win_obj.win) then
-    vim.api.nvim_win_set_buf(state.win_obj.win, buf)
-  end
   vim.api.nvim_win_set_buf(state.win_obj.win, buf)
-  print 'SSSETT'
+  local line_count = vim.api.nvim_buf_line_count(buf)
+  vim.api.nvim_win_set_cursor(state.win_obj.win, { line_count, 0 })
 end
 
 -- Function to Render Tabs
@@ -278,7 +271,6 @@ local function get_lines_until_cursor()
     table.insert(lines, '') -- add a separator
     vim.list_extend(lines, buff_lines)
   end
-  print('lines', vim.inspect(lines))
 
   return table.concat(lines, '\n')
 end
@@ -510,7 +502,7 @@ function M.openai_chat_completion()
   vim.api.nvim_command 'normal! o'
   M.invoke_llm_and_stream_into_editor({
     url = 'https://api.openai.com/v1/chat/completions',
-    model = 'gpt-4',
+    model = 'gpt-4o',
     max_tokens = 200,
   }, openai_make_curl_args, handle_openai_spec_data)
 end
