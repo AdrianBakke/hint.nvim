@@ -20,10 +20,11 @@ return {
     'AdrianBakke/hint.nvim',
     dependencies = { 'nvim-lua/plenary.nvim' },
     config = function()
-      local dingllm = require 'hint'
-      vim.keymap.set({ 'n', 'v' }, '<leader>o', dingllm.openai_chat_completion, { desc = 'OpenAI Chat Completion' })
-      vim.keymap.set({ 'n', 'v' }, '<leader>k', dingllm.deepseek_chat_completion, { desc = 'DeepSeek Chat Completion' })
-      vim.keymap.set({ 'n', 'v' }, '<leader>h', dingllm.open_window, { desc = 'Open HINT Window' })
+      local hint = require 'hint'
+      vim.keymap.set({ 'n', 'v' }, '<C-j>', hint.toggle_window, { desc = 'Open HINT Window' })
+      vim.keymap.set({ 'n', 'v' }, '<leader>1', hint.openai_chat_completion, { desc = 'OpenAI Chat Completion' })
+      vim.keymap.set({ 'n', 'v' }, '<leader>2', hint.openai_chat_completion_reasoner, { desc = 'OpenAI Chat Completion Reasoner' })
+      vim.keymap.set({ 'n', 'v' }, '<leader>3', hint.deepseek_chat_completion, { desc = 'DeepSeek Chat Completion Reasoner' })
     end,
   },
 }
@@ -36,5 +37,6 @@ read the code dummy
 ### TODO
 * make creating prompt with text selected with ctrl-v work []
 * make it possible to stop llm output with <leader>q []
-* possible syntax highlighting inside floating window? <leader>q []
-* create a demo showcasing how to use []
+* possible syntax highlighting inside floating window? <leader>q [x]
+* create a demo showcasing how to use [x] (demo should be better)
+* create floating window with tabs<33 [x]
