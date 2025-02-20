@@ -17,6 +17,7 @@ local state = {
   tabs = {},
   current_tab = 1,
   active_job = nil,
+  cursor_positions = {},
 }
 
 local ntabs = 0
@@ -100,7 +101,8 @@ local function create_or_update_window()
 
   vim.api.nvim_win_set_buf(state.win_obj.win, buf)
   local line_count = vim.api.nvim_buf_line_count(buf)
-  vim.api.nvim_win_set_cursor(state.win_obj.win, { line_count, 0 })
+  local cursor_pos = state.cursor_positions[state.current_tab] or { 1, 0 }
+  vim.api.nvim_win_set_cursor(state.win_obj.win, cursor_pos)
 end
 
 -- Function to Render Tabs
@@ -158,6 +160,7 @@ function M.next_tab()
   if #state.tabs == 0 then
     return
   end
+  state.cursor_positions[state.current_tab] = vim.api.nvim_win_get_cursor(state.win_obj.win)
   state.current_tab = state.current_tab % #state.tabs + 1
   create_or_update_window()
   render_tabs()
@@ -167,6 +170,7 @@ function M.prev_tab()
   if #state.tabs == 0 then
     return
   end
+  state.cursor_positions[state.current_tab] = vim.api.nvim_win_get_cursor(state.win_obj.win)
   state.current_tab = (state.current_tab - 2) % #state.tabs + 1
   create_or_update_window()
   render_tabs()
@@ -185,6 +189,7 @@ function M.close_current_tab()
     return
   end
   table.remove(state.tabs, state.current_tab)
+  table.remove(state.cursor_positions, state.current_tab)
   if state.current_tab > #state.tabs then
     state.current_tab = #state.tabs
   end
@@ -201,11 +206,14 @@ end
 -- Function to Toggle Floating Window
 function M.toggle_window()
   if state.win_obj and vim.api.nvim_win_is_valid(state.win_obj.win) then
+    state.cursor_positions[state.current_tab] = vim.api.nvim_win_get_cursor(state.win_obj.win)
     state.win_obj.close()
     state.win_obj = nil
   else
     create_or_update_window()
     render_tabs()
+    local cursor_pos = state.cursor_positions[state.current_tab] or { 1, 0 }
+    vim.api.nvim_win_set_cursor(state.win_obj.win, cursor_pos)
   end
 end
 
@@ -214,6 +222,7 @@ function M.create_new_tab(name)
     return
   end
   local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_option(buf, 'filetype', 'markdown')
   table.insert(state.tabs, { name = 'Tab ' .. (#state.tabs + 1), buf = buf })
   state.current_tab = #state.tabs
   create_or_update_window()
