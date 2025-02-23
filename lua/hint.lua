@@ -299,6 +299,7 @@ end
 -- Function to Handle OpenAI Data
 local function handle_openai_spec_data(data_stream, event)
   local success, json = pcall(vim.json.decode, data_stream)
+  print(vim.inspect(json))
 
   if success then
     if json.choices and json.choices[1] then
@@ -379,26 +380,6 @@ end
 local function deepseek_make_curl_args(opts, prompt)
   local api_key = get_api_key 'DEEPSEEK_API_KEY'
   return make_spec_curl_args(opts, prompt, api_key)
-end
-
-local function anthropic_make_curl_args(opts, prompt)
-  local url = opts.url
-  local api_key = opts.api_key_name and get_api_key(opts.api_key_name)
-  local data = {
-    system = 'You are HINT (Higher INTelligence) the most intelligent computer in the world. You answer with code and bullet points. Avoid writing code that do not contain any changes. Answer in markdown.',
-    messages = { { role = 'user', content = prompt } },
-    model = opts.model,
-    stream = true,
-    max_tokens = 4096,
-  }
-  local args = { '-N', '-X', 'POST', '-H', 'Content-Type: application/json', '-d', vim.json.encode(data) }
-  if api_key then
-    table.insert(args, '-H')
-    table.insert(args, 'x-api-key: ' .. api_key)
-    table.insert(args, '-H')
-    table.insert(args, 'anthropic-version: 2023-06-01')
-  end
-  return args
 end
 
 -- Function to Get Prompt from Visual Selection or Cursor
@@ -521,8 +502,8 @@ function M.openai_chat_completion_reasoner()
   vim.api.nvim_command 'normal! o'
   M.invoke_llm_and_stream_into_editor({
     url = 'https://api.openai.com/v1/chat/completions',
-    model = 'gpt-4-reasoner',
-    max_tokens = 200,
+    model = 'o1-mini',
+    --max_tokens = 200,
   }, openai_make_curl_args_reasoner, handle_openai_spec_data)
 end
 
