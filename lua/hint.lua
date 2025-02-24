@@ -210,6 +210,7 @@ function M.toggle_window()
     state.win_obj.close()
     state.win_obj = nil
   else
+    main_win = vim.api.nvim_get_current_win()
     create_or_update_window()
     render_tabs()
     local cursor_pos = state.cursor_positions[state.current_tab] or { 1, 0 }
@@ -282,18 +283,6 @@ local function get_lines_until_cursor()
   end
 
   return table.concat(lines, '\n')
-end
-
--- Function to Create New Tab via Leader Shortcut
-
--- Function to Handle Data from Anthropics
-local function handle_anthropic_spec_data(data_stream, event_state)
-  if event_state == 'content_block_delta' then
-    local json = vim.json.decode(data_stream)
-    if json.delta and json.delta.text then
-      write_to_window(json.delta.text)
-    end
-  end
 end
 
 -- Function to Handle OpenAI Data
