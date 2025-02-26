@@ -139,9 +139,13 @@ function write_to_window(str)
 
     local buf = active_tab.buf
 
-    local current_line_count = vim.api.nvim_buf_line_count(buf)
-    local lines = vim.split(str, '\n', true)
+    if string.find(str, '^```') then
+      str = '\n' .. str
+    end
 
+    local current_line_count = vim.api.nvim_buf_line_count(buf)
+
+    local lines = vim.split(str, '\n', true)
     for i, line in ipairs(lines) do
       if i == 1 and current_line_count > 0 then
         local last_line = vim.api.nvim_buf_get_lines(buf, current_line_count - 1, current_line_count, false)[1] or ''
@@ -284,25 +288,39 @@ local function get_lines_until_cursor()
 
   return table.concat(lines, '\n')
 end
-
--- Function to Handle OpenAI Data
 local function handle_openai_spec_data(data_stream, event)
+  if data_stream == '[DONE]' then
+    write_to_window '\n\n--------[Stream complete Press CTRL-j to hide or q to close]--------\n\n'
+    return
+  end
+
   local success, json = pcall(vim.json.decode, data_stream)
-  print(vim.inspect(json))
 
   if success then
     if json.choices and json.choices[1] then
       local choice = json.choices[1]
-      if choice.delta and choice.delta.content then
-        write_to_window(choice.delta.content)
-      elseif choice.text then
-        write_to_window(choice.text)
+
+      if choice.delta then
+        -- Process content
+        if choice.delta.content and choice.delta.content ~= vim.NIL then
+          write_to_window(choice.delta.content)
+        end
+
+        -- Process reasoning_content
+        if choice.delta.reasoning_content and choice.delta.reasoning_content ~= vim.NIL then
+          write_to_window(choice.delta.reasoning_content)
+        end
+      end
+
+      -- Handle finish_reason if necessary
+      if choice.finish_reason == 'stop' then
+        --write_to_window '\n\n--------[Stream complete Press CTRL-j to hide or q to close]--------\n\n'
+        -- Additional finalization if needed
+        return
       end
     else
       print 'No content found in the response'
     end
-  elseif data_stream == '[DONE]' then
-    print 'Stream complete'
   else
     print('Failed to parse JSON response:', data_stream)
   end
@@ -315,7 +333,7 @@ local function make_spec_curl_args(opts, prompt, api_key)
     messages = {
       {
         role = 'system',
-        content = 'You are HINT (Higher INTelligence) the most intelligent computer in the world. You answer with code and bullet points. Avoid writing code that do not contain any changes. Answer in markdown.',
+        content = 'You are HINT (Higher INTelligence) the most intelligent computer in the world. You answer with code and bullet points. Avoid writing code that do not contain any changes. Answer in markdown. ',
       },
       { role = 'user', content = prompt },
     },
@@ -339,7 +357,7 @@ local function make_spec_curl_args_reasoner(opts, prompt, api_key)
     messages = {
       {
         role = 'user',
-        content = 'You are HINT (Higher INTelligence) the most intelligent computer in the world. You answer with code and bullet points. Avoid writing code that do not contain any changes. Answer in markdown. '
+        content = 'You are HINT (Higher INTelligence) the most intelligent computer in the world. You answer with code and bullet points. Avoid writing code that do not contain any changes. Answer in proper markdown. '
           .. prompt,
       },
     },
@@ -353,6 +371,7 @@ local function make_spec_curl_args_reasoner(opts, prompt, api_key)
     table.insert(args, 'Authorization: Bearer ' .. api_key)
   end
   table.insert(args, url)
+  print(vim.inspect(args))
   return args
 end
 
@@ -368,7 +387,7 @@ end
 
 local function deepseek_make_curl_args(opts, prompt)
   local api_key = get_api_key 'DEEPSEEK_API_KEY'
-  return make_spec_curl_args(opts, prompt, api_key)
+  return make_spec_curl_args_reasoner(opts, prompt, api_key)
 end
 
 -- Function to Get Prompt from Visual Selection or Cursor
@@ -446,13 +465,11 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
       if state.win_obj then
         vim.schedule(function()
           vim.api.nvim_buf_clear_namespace(state.tabs[state.current_tab].buf, namespace_id, 0, -1)
-          vim.api.nvim_buf_set_lines(state.tabs[state.current_tab].buf, -1, -1, true, { '[Stream complete] Press CTRL-j to hide or q to close' })
         end)
       end
       state.active_job = nil
     end,
   }
-
   --state.main_win = vim.api.nvim_get_current_win()
   state.active_job:start()
 
@@ -479,6 +496,7 @@ end
 -- Function to OpenAI Chat Completion
 function M.openai_chat_completion()
   vim.api.nvim_command 'normal! o'
+  write_to_window '\n--------------------------------------------------------------------gtp-4o\n\n'
   M.invoke_llm_and_stream_into_editor({
     url = 'https://api.openai.com/v1/chat/completions',
     model = 'gpt-4o',
@@ -489,6 +507,7 @@ end
 -- Function to OpenAI Chat Completion Reasoner
 function M.openai_chat_completion_reasoner()
   vim.api.nvim_command 'normal! o'
+  write_to_window '\n--------------------------------------------------------------------o1-mini\n\n'
   M.invoke_llm_and_stream_into_editor({
     url = 'https://api.openai.com/v1/chat/completions',
     model = 'o1-mini',
@@ -499,6 +518,7 @@ end
 -- Function to DeepSeek Chat Completion
 function M.deepseek_chat_completion()
   vim.api.nvim_command 'normal! o'
+  write_to_window '\n--------------------------------------------------------------------deepseek-reasoner\n\n'
   M.invoke_llm_and_stream_into_editor({
     url = 'https://api.deepseek.com/chat/completions',
     model = 'deepseek-reasoner',
