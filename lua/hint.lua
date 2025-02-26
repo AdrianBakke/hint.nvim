@@ -397,8 +397,8 @@ end
 
 -- Function to Get Lines Until Cursor
 local function get_lines_until_cursor()
-  local main_buf = vim.api.nvim_win_get_buf(state.main_win or vim.api.nvim_get_current_win())
-  local cursor_pos = vim.api.nvim_win_get_cursor(state.main_win or vim.api.nvim_get_current_win())
+  local main_buf = vim.api.nvim_win_get_buf(main_win or vim.api.nvim_get_current_win())
+  local cursor_pos = vim.api.nvim_win_get_cursor(main_win or vim.api.nvim_get_current_win())
   local end_row = cursor_pos[1]
 
   local lines = vim.api.nvim_buf_get_lines(main_buf, 0, end_row, true)
@@ -453,7 +453,7 @@ function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_dat
     end,
   }
 
-  state.main_win = vim.api.nvim_get_current_win()
+  --state.main_win = vim.api.nvim_get_current_win()
   state.active_job:start()
 
   vim.api.nvim_set_keymap('n', '<Esc>', ':doautocmd User hint_LLM_Escape<CR>', { noremap = true, silent = true })
