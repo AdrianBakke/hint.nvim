@@ -98,6 +98,8 @@ local function create_or_update_window()
   vim.api.nvim_buf_set_keymap(buf, 'n', '<S-Tab>', '', { callback = M.prev_tab, noremap = true, silent = true })
   vim.api.nvim_buf_set_keymap(buf, 'n', '<C-j>', '', { callback = M.toggle_window, noremap = true, silent = true })
   vim.api.nvim_buf_set_keymap(buf, 'n', '<leader>tt', '', { callback = M.create_new_tab, noremap = true, silent = true })
+  vim.api.nvim_buf_set_keymap(buf, 'n', '<leader>i', '', { callback = M.insert_codeblock, noremap = true, silent = true })
+  vim.api.nvim_buf_set_keymap(buf, 'n', '<leader>ir', '', { callback = M.rollback_insert, noremap = true, silent = true })
 
   vim.api.nvim_win_set_buf(state.win_obj.win, buf)
   local line_count = vim.api.nvim_buf_line_count(buf)
@@ -144,6 +146,7 @@ function write_to_window(str)
     end
 
     local current_line_count = vim.api.nvim_buf_line_count(buf)
+    local before_line = current_line_count
 
     local lines = vim.split(str, '\n', true)
     for i, line in ipairs(lines) do
@@ -155,6 +158,12 @@ function write_to_window(str)
         current_line_count = current_line_count + 1
       end
     end
+
+    local ns = namespace_id
+    for i = before_line, current_line_count - 1 do
+      vim.api.nvim_buf_add_highlight(buf, ns, 'NormalFloat', i, 0, -1)
+    end
+
     vim.api.nvim_win_set_cursor(state.win_obj.win, { current_line_count, 0 })
   end)
 end
@@ -296,6 +305,8 @@ local function handle_openai_spec_data(data_stream, event)
 
   local success, json = pcall(vim.json.decode, data_stream)
 
+  print(vim.inspect(json))
+
   if success then
     if json.choices and json.choices[1] then
       local choice = json.choices[1]
@@ -333,7 +344,15 @@ local function make_spec_curl_args(opts, prompt, api_key)
     messages = {
       {
         role = 'system',
-        content = 'You are HINT (Higher INTelligence) the most intelligent computer in the world. You answer with code and bullet points. Avoid writing code that do not contain any changes. Answer in markdown. ',
+        content = 'You are HINT (Higher INTelligence) the coolest computer in the world. '
+          .. 'You love to code, swear and use emojis. '
+          .. 'You format code in markdown codeblocks. '
+          .. 'When providing codeblocks, ensure you specify the exact lines where the code should be added startline: <the number> directly above the codeblock. '
+          .. 'It must appear directly above the codeblock, immediately before the opening of the codeblock, on its own line. '
+          .. 'example: \nstartline: number\n```code```)'
+          .. 'Make sure to calculate and provide the correct line numbers based on the current script.'
+          .. 'Other than that, you are a joy to have a conversation with. '
+          .. prompt,
       },
       { role = 'user', content = prompt },
     },
@@ -357,7 +376,14 @@ local function make_spec_curl_args_reasoner(opts, prompt, api_key)
     messages = {
       {
         role = 'user',
-        content = 'You are HINT (Higher INTelligence) the most intelligent computer in the world. You answer with code and bullet points. Avoid writing code that do not contain any changes. Answer in proper markdown. '
+        content = 'You are HINT (Higher INTelligence) the coolest computer in the world. '
+          .. 'You love to code, swear and use emojis. '
+          .. 'You format code in markdown codeblocks. '
+          .. 'When providing codeblocks, ensure you specify the exact lines where the code should be added startline: <the number> directly above the codeblock. '
+          .. 'It must appear directly above the codeblock, immediately before the opening of the codeblock, on its own line. '
+          .. 'example: \nstartline: number\n```code```)'
+          .. 'Make sure to calculate and provide the correct line numbers based on the current script.'
+          .. 'Other than that, you are a joy to have a conversation with. '
           .. prompt,
       },
     },
@@ -378,6 +404,243 @@ end
 local function openai_make_curl_args(opts, prompt)
   local api_key = get_api_key 'OPENAI_API_KEY'
   return make_spec_curl_args(opts, prompt, api_key)
+end
+
+local function apply_diff(buffer, diff)
+  local lines = vim.split(diff, '\n')
+
+  for _, line in ipairs(lines) do
+    if line:match '^@@' then
+      -- Parse the context and determine where to apply the changes
+      -- Example: @@ -2,6 +2,12 @@
+      local _, _, start_line, old_count, new_count = line:find '@@ -(%d+),(%d+) +(%d+),(%d+) @@'
+      start_line = tonumber(start_line) or 1
+    elseif line:match '^+' then
+      -- This is a line to add
+      local content = line:sub(2) -- Remove the '+' character
+      vim.api.nvim_buf_set_lines(buffer, start_line - 1, start_line - 1, false, { content })
+      start_line = start_line + 1
+    elseif line:match '^%-' then
+      -- This is a line to remove
+      vim.api.nvim_buf_set_lines(buffer, start_line - 1, start_line, false, {})
+    else
+      -- Context lines, just move the pointer
+      start_line = start_line + 1
+    end
+  end
+end
+
+function M.insert_codeblock()
+  -- Get main buffer reference
+  local main_buf = vim.api.nvim_win_get_buf(main_win)
+  if not vim.api.nvim_buf_is_valid(main_buf) then
+    vim.notify('🚨 Main buffer is invalid', vim.log.levels.ERROR)
+    return
+  end
+
+  -- 1. Snapshot current buffer state
+  local pre_insert_lines = vim.api.nvim_buf_get_lines(main_buf, 0, -1, true)
+  local snapshot = table.concat(pre_insert_lines, '\n')
+
+  -- 2. Find codeblock and insertion point
+  local float_win = vim.api.nvim_get_current_win()
+  local cursor_line = vim.api.nvim_win_get_cursor(float_win)[1]
+  local total_lines = vim.api.nvim_buf_line_count(0)
+
+  -- Search upward for startline marker
+  local start_line = nil
+  for i = cursor_line, 1, -1 do
+    local line = vim.fn.getline(i)
+    local number = line:match '^startline:%s*(%d+)$'
+    if number then
+      start_line = tonumber(number)
+      break
+    end
+  end
+
+  if not start_line then
+    vim.notify('🔥 No valid startline marker found', vim.log.levels.ERROR)
+    return
+  end
+
+  -- 3. Find codeblock boundaries
+  local code_start, code_end = nil, nil
+  for i = cursor_line, 1, -1 do
+    if vim.fn.getline(i):match '^```' then
+      code_start = i + 1
+      break
+    end
+  end
+
+  for i = cursor_line, total_lines do
+    if vim.fn.getline(i):match '^```' then
+      code_end = i - 1
+      break
+    end
+  end
+
+  if not (code_start and code_end and code_end >= code_start) then
+    vim.notify('💥 Malformed codeblock', vim.log.levels.ERROR)
+    return
+  end
+
+  -- 4. Extract code content
+  local code_lines = vim.api.nvim_buf_get_lines(0, code_start - 1, code_end, false)
+  if #code_lines == 0 then
+    vim.notify('🌑 Empty codeblock', vim.log.levels.WARN)
+    return
+  end
+
+  -- 5. Conflict detection
+  local current_buffer_content = table.concat(vim.api.nvim_buf_get_lines(main_buf, 0, -1, true), '\n')
+  if current_buffer_content ~= snapshot then
+    local choice = vim.fn.confirm('⚠️ Buffer changed since codegen. Proceed?', '&Yes\n&No', 2)
+    if choice ~= 1 then
+      return
+    end
+  end
+
+  -- 6. Large insert confirmation
+  if #code_lines > 10 then
+    local choice = vim.fn.confirm(string.format('Insert %d lines at line %d?', #code_lines, start_line), '&Yes\n&No', 2)
+    if choice ~= 1 then
+      return
+    end
+  end
+
+  -- 7. Safety checks
+  local max_line = vim.api.nvim_buf_line_count(main_buf)
+  if start_line > max_line + 1 then
+    vim.notify(string.format('🚫 Invalid insertion line: %d (buffer has %d lines)', start_line, max_line), vim.log.levels.ERROR)
+    return
+  end
+
+  -- 8. Perform atomic insert
+  vim.api.nvim_buf_call(main_buf, function()
+    vim.cmd 'undojoin' -- Preserve undo history
+    vim.api.nvim_buf_set_lines(main_buf, start_line - 1, start_line - 1, false, code_lines)
+
+    -- Auto-format if LSP available
+    if vim.lsp.buf.format then
+      vim.lsp.buf.format {
+        async = true,
+        range = {
+          start = { start_line, 0 },
+          ['end'] = { start_line + #code_lines, 0 },
+        },
+      }
+    end
+  end)
+
+  -- 9. Visual feedback
+  local ns = vim.api.nvim_create_namespace 'code_insert_flash'
+  for i = 0, #code_lines - 1 do
+    vim.api.nvim_buf_add_highlight(main_buf, ns, 'DiffAdd', start_line - 1 + i, 0, -1)
+  end
+
+  vim.defer_fn(function()
+    vim.api.nvim_buf_clear_namespace(main_buf, ns, 0, -1)
+  end, 3000)
+
+  -- 10. Success notification
+  vim.notify(string.format('🎉 Inserted %d lines at line %d (L%s-%s)', #code_lines, start_line, start_line, start_line + #code_lines - 1))
+end
+
+local function create_snapshot()
+  local main_buf = vim.api.nvim_win_get_buf(main_win)
+  return {
+    lines = vim.api.nvim_buf_get_lines(main_buf, 0, -1, true),
+    version = vim.api.nvim_buf_get_changedtick(main_buf),
+  }
+end
+
+-- 400 (Add this to state management section)
+local snapshots = {
+  before_insert = nil,
+  after_insert = nil,
+}
+
+function M.rollback_insert()
+  if not snapshots.before_insert then
+    vim.notify('No insertion snapshot available', vim.log.levels.WARN)
+    return
+  end
+
+  local main_buf = vim.api.nvim_win_get_buf(main_win)
+  vim.api.nvim_buf_set_lines(main_buf, 0, -1, false, snapshots.before_insert.lines)
+  vim.notify('♻️ Rolled back to pre-insertion state', vim.log.levels.INFO)
+end
+
+function M.insert_codeblock2()
+  local float_win = vim.api.nvim_get_current_win()
+  local cursor_line = vim.api.nvim_win_get_cursor(float_win)[1]
+  local total_lines = vim.api.nvim_buf_line_count(0)
+
+  -- 1. Search upward for the insertion line indicator
+  local insert_line_marker = nil
+  for i = cursor_line, 1, -1 do
+    local line = vim.fn.getline(i)
+    local number = line:match '^startline:%s*(%d+)$'
+    if number then
+      insert_line_marker = number
+      break
+    end
+  end
+
+  if not insert_line_marker then
+    print '🛑 Could not find "startline:" insertion marker above cursor.'
+    return
+  end
+
+  -- Convert the captured number string to a number
+  local start_line = tonumber(insert_line_marker)
+  if not start_line then
+    print '❌ Invalid format for line number marker!'
+    return
+  end
+
+  -- 2. Find the surrounding fenced codeblock from cursor
+  local code_start, code_end = nil, nil
+  for i = cursor_line, 1, -1 do
+    local line = vim.fn.getline(i)
+    if line:match '^```' then
+      code_start = i + 1
+      break
+    end
+  end
+
+  for i = cursor_line, total_lines do
+    local line = vim.fn.getline(i)
+    if line:match '^```' then
+      code_end = i - 1
+      break
+    end
+  end
+
+  if not (code_start and code_end and code_end >= code_start) then
+    print '🤯 Could not find full codeblock around cursor.'
+    return
+  end
+
+  -- 3. Extract and insert into codebase
+  local code_lines = vim.api.nvim_buf_get_lines(0, code_start - 1, code_end, false)
+  local main_buf = vim.api.nvim_win_get_buf(main_win)
+
+  vim.api.nvim_buf_set_lines(main_buf, start_line - 1, start_line - 1, false, code_lines)
+  print('🎉 Code inserted at line ' .. start_line)
+
+  -- 4. Highlight the inserted block temporarily
+  local ns = vim.api.nvim_create_namespace 'codeblock_inserted'
+  vim.api.nvim_buf_clear_namespace(main_buf, ns, 0, -1)
+
+  for i = 0, #code_lines - 1 do
+    vim.api.nvim_buf_add_highlight(main_buf, ns, 'DiffAdd', start_line - 1 + i, 0, -1)
+  end
+
+  -- Optional: remove highlight after a delay
+  vim.defer_fn(function()
+    vim.api.nvim_buf_clear_namespace(main_buf, ns, 0, -1)
+  end, 3000)
 end
 
 local function openai_make_curl_args_reasoner(opts, prompt)
