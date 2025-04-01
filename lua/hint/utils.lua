@@ -1,6 +1,6 @@
 local M = {}
 
-local state_module = require 'state'
+local state_module = require 'hint.state'
 function M.get_api_key(name)
   return os.getenv(name)
 end

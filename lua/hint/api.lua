@@ -1,6 +1,6 @@
 local M = {}
-local utils = require 'utils'
-local state_module = require 'state'
+local utils = require 'hint.utils'
+local state_module = require 'hint.state'
 local state = state_module.state
 local Job = require 'plenary.job'
 
