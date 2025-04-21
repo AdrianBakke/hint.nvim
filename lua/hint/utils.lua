@@ -1,6 +1,7 @@
 local M = {}
 
 local state_module = require 'hint.state'
+
 function M.get_api_key(name)
   return os.getenv(name)
 end
@@ -57,6 +58,29 @@ function M.get_lines_until_cursor(state_module)
   end
 
   return table.concat(lines, '\n')
+end
+
+function M.get_prompt(opts)
+  local replace = opts.replace
+  local visual_lines = M.get_visual_selection()
+  local prompt = ''
+
+  if visual_lines then
+    prompt = table.concat(visual_lines, '\n')
+    if replace then
+      vim.api.nvim_command 'normal! d'
+      vim.api.nvim_command 'normal! k'
+    else
+      local _, erow, ecol = unpack(vim.fn.getpos '.')
+      vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', false, true, true), 'nx', false)
+      vim.api.nvim_win_set_cursor(0, { erow, ecol })
+      vim.api.nvim_command 'normal! o'
+    end
+  else
+    prompt = M.get_lines_until_cursor(state_module)
+  end
+
+  return prompt
 end
 
 return M

@@ -56,6 +56,7 @@ function M.create_or_update_window()
     state.win_obj = {
       win = win,
       tab_win = tab_win,
+      tab_buf = tab_buf,
       close = function()
         if vim.api.nvim_win_is_valid(win) then
           vim.api.nvim_win_close(win, true)
@@ -76,13 +77,13 @@ function M.create_or_update_window()
     vim.bo[buf].filetype = 'markdown'
   end
 
-  vim.api.nvim_buf_set_keymap(buf, 'n', 'q', '', { callback = require('main').close_current_tab, noremap = true, silent = true })
-  vim.api.nvim_buf_set_keymap(buf, 'n', '<Tab>', '', { callback = require('main').next_tab, noremap = true, silent = true })
-  vim.api.nvim_buf_set_keymap(buf, 'n', '<S-Tab>', '', { callback = require('main').prev_tab, noremap = true, silent = true })
-  vim.api.nvim_buf_set_keymap(buf, 'n', '<C-j>', '', { callback = require('main').toggle_window, noremap = true, silent = true })
-  vim.api.nvim_buf_set_keymap(buf, 'n', '<leader>tt', '', { callback = require('main').create_new_tab, noremap = true, silent = true })
-  vim.api.nvim_buf_set_keymap(buf, 'n', '<leader>i', '', { callback = require('main').insert_codeblock, noremap = true, silent = true })
-  vim.api.nvim_buf_set_keymap(buf, 'n', '<leader>ir', '', { callback = require('main').rollback_insert, noremap = true, silent = true })
+  vim.api.nvim_buf_set_keymap(buf, 'n', 'q', '', { callback = M.close_current_tab, noremap = true, silent = true })
+  vim.api.nvim_buf_set_keymap(buf, 'n', '<Tab>', '', { callback = M.next_tab, noremap = true, silent = true })
+  vim.api.nvim_buf_set_keymap(buf, 'n', '<S-Tab>', '', { callback = M.prev_tab, noremap = true, silent = true })
+  vim.api.nvim_buf_set_keymap(buf, 'n', '<C-j>', '', { callback = M.toggle_window, noremap = true, silent = true })
+  vim.api.nvim_buf_set_keymap(buf, 'n', '<leader>tt', '', { callback = M.create_new_tab, noremap = true, silent = true })
+  --vim.api.nvim_buf_set_keymap(buf, 'n', '<leader>i', '', { callback = M.insert_codeblock, noremap = true, silent = true })
+  --vim.api.nvim_buf_set_keymap(buf, 'n', '<leader>ir', '', { callback = M.rollback_insert, noremap = true, silent = true })
 
   vim.api.nvim_win_set_buf(state.win_obj.win, buf)
   local line_count = vim.api.nvim_buf_line_count(buf)
@@ -104,10 +105,12 @@ local function render_tabs()
       tab_line = tab_line .. '  ' .. tab.name .. '  '
     end
   end
-  vim.api.nvim_buf_set_option(state.win_obj.tab_win, 'modifiable', true)
-  vim.api.nvim_buf_set_lines(state.win_obj.tab_win, 0, -1, false, { tab_line })
-  vim.api.nvim_buf_add_highlight(state.win_obj.tab_win, namespace_id, 'TabLine', 0, 0, -1)
-  vim.api.nvim_buf_set_option(state.win_obj.tab_win, 'modifiable', false)
+  print(vim.inspect(state))
+  local tab_buf = state.win_obj.tab_buf
+  vim.api.nvim_buf_set_option(tab_buf, 'modifiable', true)
+  vim.api.nvim_buf_set_lines(tab_buf, 0, -1, false, { tab_line })
+  vim.api.nvim_buf_add_highlight(tab_buf, namespace_id, 'TabLine', 0, 0, -1)
+  vim.api.nvim_buf_set_option(tab_buf, 'modifiable', false)
 end
 
 function M.next_tab()
@@ -116,8 +119,8 @@ function M.next_tab()
   end
   state_module.state.cursor_positions[state_module.state.current_tab] = vim.api.nvim_win_get_cursor(state_module.state.win_obj.win)
   state_module.state.current_tab = state_module.state.current_tab % #state_module.state.tabs + 1
-  ui.create_or_update_window()
-  ui.render_tabs()
+  M.create_or_update_window()
+  render_tabs()
 end
 
 function M.create_new_tab(name)
@@ -128,15 +131,15 @@ function M.create_new_tab(name)
   vim.api.nvim_buf_set_option(buf, 'filetype', 'markdown')
   table.insert(state_module.state.tabs, { name = 'Tab ' .. (#state_module.state.tabs + 1), buf = buf })
   state_module.state.current_tab = #state_module.state.tabs
-  ui.create_or_update_window()
-  ui.render_tabs()
+  M.create_or_update_window()
+  render_tabs()
   return buf
 end
 
 function M.write_to_window(str)
   vim.schedule(function()
     if not state_module.state.win_obj or not vim.api.nvim_win_is_valid(state_module.state.win_obj.win) then
-      ui.create_or_update_window()
+      M.create_or_update_window()
     end
 
     local active_tab = state_module.state.tabs[state_module.state.current_tab]
@@ -179,8 +182,8 @@ function M.prev_tab()
   end
   state_module.state.cursor_positions[state_module.state.current_tab] = vim.api.nvim_win_get_cursor(state_module.state.win_obj.win)
   state_module.state.current_tab = (state_module.state.current_tab - 2) % #state_module.state.tabs + 1
-  ui.create_or_update_window()
-  ui.render_tabs()
+  M.create_or_update_window()
+  render_tabs()
 end
 
 function M.close_current_tab()
@@ -200,8 +203,8 @@ function M.close_current_tab()
     for i, _ in ipairs(state_module.state.tabs) do
       state_module.state.tabs[i].name = 'Tab ' .. i
     end
-    ui.create_or_update_window()
-    ui.render_tabs()
+    M.create_or_update_window()
+    render_tabs()
   end
 end
 

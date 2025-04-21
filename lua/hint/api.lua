@@ -1,8 +1,11 @@
 local M = {}
 local utils = require 'hint.utils'
+local ui = require 'hint.ui'
 local state_module = require 'hint.state'
 local state = state_module.state
 local Job = require 'plenary.job'
+
+local namespace_id = vim.api.nvim_create_namespace 'hint_llm_output'
 
 local function make_spec_curl_args(opts, prompt, api_key)
   local url = opts.url
@@ -69,7 +72,7 @@ end
 
 local function handle_openai_spec_data(data_stream, event)
   if data_stream == '[DONE]' then
-    require('main').write_to_window '\n\n--------[Stream complete Press CTRL-j to hide or q to close]--------\n\n'
+    ui.write_to_window '\n\n--------[Stream complete Press CTRL-j to hide or q to close]--------\n\n'
     return
   end
 
@@ -84,12 +87,12 @@ local function handle_openai_spec_data(data_stream, event)
       if choice.delta then
         -- Process content
         if choice.delta.content and choice.delta.content ~= vim.NIL then
-          require('main').write_to_window(choice.delta.content)
+          ui.write_to_window(choice.delta.content)
         end
 
         -- Process reasoning_content
         if choice.delta.reasoning_content and choice.delta.reasoning_content ~= vim.NIL then
-          require('main').write_to_window(choice.delta.reasoning_content)
+          ui.write_to_window(choice.delta.reasoning_content)
         end
       end
 
@@ -107,7 +110,7 @@ local function handle_openai_spec_data(data_stream, event)
 end
 
 function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_data_fn)
-  local prompt = require('main').get_prompt(opts)
+  local prompt = utils.get_prompt(opts)
   local args = make_curl_args_fn(opts, prompt, utils.get_api_key 'OPENAI_API_KEY')
   local curr_event_state = nil
 
@@ -151,7 +154,7 @@ end
 
 function M.openai_chat_completion()
   vim.api.nvim_command 'normal! o'
-  require('main').write_to_window '\n--------------------------------------------------------------------gtp-4o\n\n'
+  ui.write_to_window '\n--------------------------------------------------------------------gtp-4o\n\n'
   M.invoke_llm_and_stream_into_editor({
     url = 'https://api.openai.com/v1/chat/completions',
     model = 'gpt-4o',
@@ -161,7 +164,7 @@ end
 
 function M.openai_chat_completion_reasoner()
   vim.api.nvim_command 'normal! o'
-  require('main').write_to_window '\n--------------------------------------------------------------------o1-mini\n\n'
+  ui.write_to_window '\n--------------------------------------------------------------------o1-mini\n\n'
   M.invoke_llm_and_stream_into_editor({
     url = 'https://api.openai.com/v1/chat/completions',
     model = 'o1-mini',
@@ -171,7 +174,7 @@ end
 
 function M.deepseek_chat_completion()
   vim.api.nvim_command 'normal! o'
-  require('main').write_to_window '\n--------------------------------------------------------------------deepseek-reasoner\n\n'
+  ui.write_to_window '\n--------------------------------------------------------------------deepseek-reasoner\n\n'
   M.invoke_llm_and_stream_into_editor({
     url = 'https://api.deepseek.com/chat/completions',
     model = 'deepseek-reasoner',
