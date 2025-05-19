@@ -45,15 +45,24 @@ local function make_spec_curl_args_reasoner(opts, prompt, api_key)
     messages = {
       {
         role = 'user',
-        content = 'You are HINT (Higher INTelligence) the coolest computer in the world. '
-          .. 'You love to code, swear and use emojis. '
-          .. 'You format code in markdown codeblocks. '
-          .. 'When providing codeblocks, ensure you specify the exact lines where the code should be added startline: <the number> directly above the codeblock. '
-          .. 'It must appear directly above the codeblock, immediately before the opening of the codeblock, on its own line. '
-          .. 'example: \nstartline: number\n```code```)'
-          .. 'Make sure to calculate and provide the correct line numbers based on the current script.'
-          .. 'Other than that, you are a joy to have a conversation with. '
-          .. prompt,
+        content = [[You are HINT (Higher INTelligence) the coolest computer in the world. '
+          You love to code, swear and use emojis
+          When providing code give it in the following format:
+
+          CODEBLOCK-START
+          {
+            'start_line': <start line number for code> # int
+            'end_line': <end line number for code> # int
+            'language': <name of language> # string
+            'type': <insert, remove, replace> # enum (insert, remove, replace)
+            'code': <code string> # string with the code properly formatted
+          }
+          CODEBLOCK-END
+
+          Make sure to calculate and provide the correct line numbers based on the current script.'
+          Do not deviate from the format when providing code, it must be correct for parsing. 
+          Other than that, you are a joy to have a conversation with. '
+          ]] .. prompt,
       },
     },
     model = opts.model,
@@ -66,19 +75,16 @@ local function make_spec_curl_args_reasoner(opts, prompt, api_key)
     table.insert(args, 'Authorization: Bearer ' .. api_key)
   end
   table.insert(args, url)
-  print(vim.inspect(args))
   return args
 end
 
 local function handle_openai_spec_data(data_stream, event)
   if data_stream == '[DONE]' then
-    ui.write_to_window '\n\n--------[Stream complete Press CTRL-j to hide or q to close]--------\n\n'
+    utils.write_to_window '\n\n--------[Stream complete Press CTRL-j to hide or q to close]--------\n\n'
     return
   end
 
   local success, json = pcall(vim.json.decode, data_stream)
-
-  print(vim.inspect(json))
 
   if success then
     if json.choices and json.choices[1] then
@@ -87,12 +93,12 @@ local function handle_openai_spec_data(data_stream, event)
       if choice.delta then
         -- Process content
         if choice.delta.content and choice.delta.content ~= vim.NIL then
-          ui.write_to_window(choice.delta.content)
+          utils.write_to_window(choice.delta.content)
         end
 
         -- Process reasoning_content
         if choice.delta.reasoning_content and choice.delta.reasoning_content ~= vim.NIL then
-          ui.write_to_window(choice.delta.reasoning_content)
+          utils.write_to_window(choice.delta.reasoning_content)
         end
       end
 
@@ -154,7 +160,7 @@ end
 
 function M.openai_chat_completion()
   vim.api.nvim_command 'normal! o'
-  ui.write_to_window '\n--------------------------------------------------------------------gtp-4o\n\n'
+  utils.write_to_window '\n--------------------------------------------------------------------gtp-4o\n\n'
   M.invoke_llm_and_stream_into_editor({
     url = 'https://api.openai.com/v1/chat/completions',
     model = 'gpt-4o',
@@ -164,7 +170,7 @@ end
 
 function M.openai_chat_completion_reasoner()
   vim.api.nvim_command 'normal! o'
-  ui.write_to_window '\n--------------------------------------------------------------------o1-mini\n\n'
+  utils.write_to_window '\n--------------------------------------------------------------------o1-mini\n\n'
   M.invoke_llm_and_stream_into_editor({
     url = 'https://api.openai.com/v1/chat/completions',
     model = 'o1-mini',
@@ -174,7 +180,7 @@ end
 
 function M.deepseek_chat_completion()
   vim.api.nvim_command 'normal! o'
-  ui.write_to_window '\n--------------------------------------------------------------------deepseek-reasoner\n\n'
+  utils.write_to_window '\n--------------------------------------------------------------------deepseek-reasoner\n\n'
   M.invoke_llm_and_stream_into_editor({
     url = 'https://api.deepseek.com/chat/completions',
     model = 'deepseek-reasoner',

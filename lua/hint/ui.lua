@@ -114,94 +114,54 @@ local function render_tabs()
 end
 
 function M.next_tab()
-  if #state_module.state.tabs == 0 then
+  if #state.tabs == 0 then
     return
   end
-  state_module.state.cursor_positions[state_module.state.current_tab] = vim.api.nvim_win_get_cursor(state_module.state.win_obj.win)
-  state_module.state.current_tab = state_module.state.current_tab % #state_module.state.tabs + 1
+  state.cursor_positions[state.current_tab] = vim.api.nvim_win_get_cursor(state.win_obj.win)
+  state.current_tab = state.current_tab % #state.tabs + 1
   M.create_or_update_window()
   render_tabs()
 end
 
 function M.create_new_tab(name)
-  if #state_module.state.tabs > 9 then
+  if #state.tabs > 9 then
     return
   end
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_option(buf, 'filetype', 'markdown')
-  table.insert(state_module.state.tabs, { name = 'Tab ' .. (#state_module.state.tabs + 1), buf = buf })
-  state_module.state.current_tab = #state_module.state.tabs
+  table.insert(state.tabs, { name = 'Tab ' .. (#state.tabs + 1), buf = buf })
+  state.current_tab = #state.tabs
   M.create_or_update_window()
   render_tabs()
   return buf
 end
 
-function M.write_to_window(str)
-  vim.schedule(function()
-    if not state_module.state.win_obj or not vim.api.nvim_win_is_valid(state_module.state.win_obj.win) then
-      M.create_or_update_window()
-    end
-
-    local active_tab = state_module.state.tabs[state_module.state.current_tab]
-    if not active_tab or not vim.api.nvim_buf_is_valid(active_tab.buf) then
-      return
-    end
-
-    local buf = active_tab.buf
-
-    if string.find(str, '^```') then
-      str = '\n' .. str
-    end
-
-    local current_line_count = vim.api.nvim_buf_line_count(buf)
-    local before_line = current_line_count
-
-    local lines = vim.split(str, '\n', true)
-    for i, line in ipairs(lines) do
-      if i == 1 and current_line_count > 0 then
-        local last_line = vim.api.nvim_buf_get_lines(buf, current_line_count - 1, current_line_count, false)[1] or ''
-        vim.api.nvim_buf_set_lines(buf, current_line_count - 1, current_line_count, false, { last_line .. line })
-      else
-        vim.api.nvim_buf_set_lines(buf, current_line_count, current_line_count, false, { line })
-        current_line_count = current_line_count + 1
-      end
-    end
-
-    local ns = namespace_id
-    for i = before_line, current_line_count - 1 do
-      vim.api.nvim_buf_add_highlight(buf, ns, 'NormalFloat', i, 0, -1)
-    end
-
-    vim.api.nvim_win_set_cursor(state_module.state.win_obj.win, { current_line_count, 0 })
-  end)
-end
-
 function M.prev_tab()
-  if #state_module.state.tabs == 0 then
+  if #state.tabs == 0 then
     return
   end
-  state_module.state.cursor_positions[state_module.state.current_tab] = vim.api.nvim_win_get_cursor(state_module.state.win_obj.win)
-  state_module.state.current_tab = (state_module.state.current_tab - 2) % #state_module.state.tabs + 1
+  state.cursor_positions[state.current_tab] = vim.api.nvim_win_get_cursor(state.win_obj.win)
+  state.current_tab = (state.current_tab - 2) % #state.tabs + 1
   M.create_or_update_window()
   render_tabs()
 end
 
 function M.close_current_tab()
-  if #state_module.state.tabs == 0 then
+  if #state.tabs == 0 then
     return
   end
-  table.remove(state_module.state.tabs, state_module.state.current_tab)
-  table.remove(state_module.state.cursor_positions, state_module.state.current_tab)
-  if state_module.state.current_tab > #state_module.state.tabs then
-    state_module.state.current_tab = #state_module.state.tabs
+  table.remove(state.tabs, state.current_tab)
+  table.remove(state.cursor_positions, state.current_tab)
+  if state.current_tab > #state.tabs then
+    state.current_tab = #state.tabs
   end
-  if #state_module.state.tabs == 0 then
-    state_module.state.win_obj.close()
-    state_module.state.win_obj = nil
+  if #state.tabs == 0 then
+    state.win_obj.close()
+    state.win_obj = nil
   else
     -- Rename tabs to maintain order
-    for i, _ in ipairs(state_module.state.tabs) do
-      state_module.state.tabs[i].name = 'Tab ' .. i
+    for i, _ in ipairs(state.tabs) do
+      state.tabs[i].name = 'Tab ' .. i
     end
     M.create_or_update_window()
     render_tabs()
@@ -214,14 +174,13 @@ function M.toggle_window()
     state.win_obj.close()
     state.win_obj = nil
   else
-    state_module.main_win = vim.api.nvim_get_current_win()
+    state.main_win = vim.api.nvim_get_current_win()
+
     M.create_or_update_window()
     render_tabs()
     local cursor_pos = state.cursor_positions[state.current_tab] or { 1, 0 }
     vim.api.nvim_win_set_cursor(state.win_obj.win, cursor_pos)
   end
 end
-
--- Include other UI-related functions as needed
 
 return M

@@ -44,9 +44,10 @@ function M.get_visual_selection()
   end
 end
 
-function M.get_lines_until_cursor(state_module)
-  local main_buf = vim.api.nvim_win_get_buf(state_module.state.main_win or vim.api.nvim_get_current_win())
-  local cursor_pos = vim.api.nvim_win_get_cursor(state_module.state.main_win or vim.api.nvim_get_current_win())
+function get_lines_until_cursor()
+  print(state_module.state.main_win)
+  local main_buf = vim.api.nvim_win_get_buf(state_module.state.main_win)
+  local cursor_pos = vim.api.nvim_win_get_cursor(state_module.state.main_win)
   local end_row = cursor_pos[1]
 
   local lines = vim.api.nvim_buf_get_lines(main_buf, 0, end_row, true)
@@ -77,10 +78,63 @@ function M.get_prompt(opts)
       vim.api.nvim_command 'normal! o'
     end
   else
-    prompt = M.get_lines_until_cursor(state_module)
+    prompt = get_lines_until_cursor()
   end
 
   return prompt
+end
+
+function M.write_to_window(str)
+  vim.schedule(function()
+    if not state_module.state.win_obj or not vim.api.nvim_win_is_valid(state_module.state.win_obj.win) then
+      M.create_or_update_window()
+    end
+
+    local active_tab = state_module.state.tabs[state_module.state.current_tab]
+    if not active_tab or not vim.api.nvim_buf_is_valid(active_tab.buf) then
+      return
+    end
+
+    local buf = active_tab.buf
+
+    if string.find(str, '^```') then
+      str = '\n' .. str
+    end
+
+    local current_line_count = vim.api.nvim_buf_line_count(buf)
+    local before_line = current_line_count
+
+    local lines = vim.split(str, '\n', true)
+    for i, line in ipairs(lines) do
+      if i == 1 and current_line_count > 0 then
+        local last_line = vim.api.nvim_buf_get_lines(buf, current_line_count - 1, current_line_count, false)[1] or ''
+        vim.api.nvim_buf_set_lines(buf, current_line_count - 1, current_line_count, false, { last_line .. line })
+      else
+        vim.api.nvim_buf_set_lines(buf, current_line_count, current_line_count, false, { line })
+        current_line_count = current_line_count + 1
+      end
+    end
+
+    print(vim.inspect(state_module))
+    --local ns = namespace_id
+    for i = before_line, current_line_count - 1 do
+      vim.api.nvim_buf_add_highlight(buf, -1, 'NormalFloat', i, 0, -1) -- -1 now should be namespace id?
+    end
+
+    vim.api.nvim_win_set_cursor(state_module.state.win_obj.win, { current_line_count, 0 })
+  end)
+end
+
+function M.parse_code_block(text)
+  local pattern = 'CODEBLOCK%-START%s*({.-})%s*CODEBLOCK%-END'
+  local codeblock_str = string.match(text, pattern)
+
+  if not codeblock_str then
+    print 'no valid codeblock'
+  end
+
+  local t = vim.json.decode(codeblock_str)
+  print(vim.inspect(t))
 end
 
 return M

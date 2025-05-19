@@ -1,6 +1,7 @@
 local M = {}
 
 M.state = {
+  main_win = nil,
   win_obj = nil,
   tabs = {},
   current_tab = 1,
