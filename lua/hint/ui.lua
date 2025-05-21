@@ -105,7 +105,7 @@ local function render_tabs()
       tab_line = tab_line .. '  ' .. tab.name .. '  '
     end
   end
-  print(vim.inspect(state))
+  --print(vim.inspect(state))
   local tab_buf = state.win_obj.tab_buf
   vim.api.nvim_buf_set_option(tab_buf, 'modifiable', true)
   vim.api.nvim_buf_set_lines(tab_buf, 0, -1, false, { tab_line })

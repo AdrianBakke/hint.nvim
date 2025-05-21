@@ -45,7 +45,7 @@ function M.get_visual_selection()
 end
 
 function get_lines_until_cursor()
-  print(state_module.state.main_win)
+  --print(state_module.state.main_win)
   local main_buf = vim.api.nvim_win_get_buf(state_module.state.main_win)
   local cursor_pos = vim.api.nvim_win_get_cursor(state_module.state.main_win)
   local end_row = cursor_pos[1]
@@ -115,7 +115,7 @@ function M.write_to_window(str)
       end
     end
 
-    print(vim.inspect(state_module))
+    --print(vim.inspect(state_module))
     --local ns = namespace_id
     for i = before_line, current_line_count - 1 do
       vim.api.nvim_buf_add_highlight(buf, -1, 'NormalFloat', i, 0, -1) -- -1 now should be namespace id?
@@ -134,7 +134,7 @@ function M.parse_code_block(text)
   end
 
   local t = vim.json.decode(codeblock_str)
-  print(vim.inspect(t))
+  --print(vim.inspect(t))
 end
 
 return M
