@@ -141,8 +141,6 @@ local function render_tabs()
   vim.api.nvim_buf_set_lines(tab_buf, 1, 3, false, { context_line, token_line })
 
   -- Highlight the context line and token line if desired
-  -- vim.api.nvim_buf_add_highlight(tab_buf, namespace_id, 'Comment', 1, 0, -1)
-  -- vim.api.nvim_buf_add_highlight(tab_buf, namespace_id, 'Comment', 2, 0, -1)
   vim.api.nvim_buf_add_highlight(tab_buf, namespace_id, 'HintGreen', 1, 0, -1)
   vim.api.nvim_buf_add_highlight(tab_buf, namespace_id, 'HintGreen', 2, 0, -1)
 
