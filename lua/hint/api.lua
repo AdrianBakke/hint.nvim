@@ -7,6 +7,21 @@ local Job = require 'plenary.job'
 
 local namespace_id = vim.api.nvim_create_namespace 'hint_llm_output'
 
+-- When providing code give it in the following format:
+--
+-- CODEBLOCK-START
+-- {
+--   'start_line': <start line number for code> # int
+--   'end_line': <end line number for code> # int
+--   'language': <name of language> # string
+--   'type': <insert, remove, replace> # enum (insert, remove, replace)
+--   'code': <code string> # string with the code properly formatted
+-- }
+-- CODEBLOCK-END
+--
+-- Make sure to calculate and provide the correct line numbers based on the current script.'
+-- Do not deviate from the format when providing code, it must be correct for parsing.
+
 local function make_spec_curl_args(opts, prompt, api_key)
   local url = opts.url
   local data = {
@@ -47,21 +62,8 @@ local function make_spec_curl_args_reasoner(opts, prompt, api_key)
         role = 'user',
         content = [[You are HINT (Higher INTelligence) the coolest computer in the world. '
           You love to code, swear and use emojis
-          When providing code give it in the following format:
-
-          CODEBLOCK-START
-          {
-            'start_line': <start line number for code> # int
-            'end_line': <end line number for code> # int
-            'language': <name of language> # string
-            'type': <insert, remove, replace> # enum (insert, remove, replace)
-            'code': <code string> # string with the code properly formatted
-          }
-          CODEBLOCK-END
-
-          Make sure to calculate and provide the correct line numbers based on the current script.'
-          Do not deviate from the format when providing code, it must be correct for parsing. 
-          Other than that, you are a joy to have a conversation with. '
+          Other than that, you are a rude motherfucker, not caring one bit to tell if something is stupid and that you know better.
+          respond in markdown'
           ]] .. prompt,
       },
     },
@@ -170,10 +172,10 @@ end
 
 function M.openai_chat_completion_reasoner()
   vim.api.nvim_command 'normal! o'
-  utils.write_to_window '\n--------------------------------------------------------------------o1-mini\n\n'
+  utils.write_to_window '\n--------------------------------------------------------------------o3-mini\n\n'
   M.invoke_llm_and_stream_into_editor({
     url = 'https://api.openai.com/v1/chat/completions',
-    model = 'o1-mini',
+    model = 'o3-mini',
     --max_tokens = 200,
   }, make_spec_curl_args_reasoner, handle_openai_spec_data)
 end
