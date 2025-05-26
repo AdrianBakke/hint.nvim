@@ -45,9 +45,9 @@ function M.create_or_update_window()
     local tab_win = vim.api.nvim_open_win(tab_buf, false, {
       relative = 'editor',
       width = width,
-      height = 2, -- Two lines: one for tabs, one for context files
+      height = 3, -- Two lines: one for tabs, one for context files
       col = math.floor((vim.o.columns - width) / 2),
-      row = math.floor((vim.o.lines - height) / 2) - 1, -- Position above the main content window
+      row = math.floor((vim.o.lines - height) / 2) - 2, -- Position above the main content window
       style = 'minimal',
       border = 'none',
     })
@@ -83,6 +83,7 @@ function M.create_or_update_window()
   vim.api.nvim_buf_set_keymap(buf, 'n', '<S-Tab>', '', { callback = M.prev_tab, noremap = true, silent = true })
   vim.api.nvim_buf_set_keymap(buf, 'n', '<C-j>', '', { callback = M.toggle_window, noremap = true, silent = true })
   vim.api.nvim_buf_set_keymap(buf, 'n', '<leader>tt', '', { callback = M.create_new_tab, noremap = true, silent = true })
+  vim.api.nvim_buf_set_keymap(buf, 'n', '<C-c>', '', { callback = M.popup_context_files, noremap = true, silent = true })
 
   -- Add the Ctrl-P keymap for selecting files
   vim.api.nvim_buf_set_keymap(buf, 'n', '<C-p>', '', { callback = M.select_files, noremap = true, silent = true })
@@ -120,13 +121,106 @@ local function render_tabs()
   end
   local context_line = 'Context Files: ' .. ((#filenames > 0 and table.concat(filenames, ', ')) or 'None')
 
-  -- Set context line at the bottom of the buffer
-  vim.api.nvim_buf_set_lines(tab_buf, 1, 2, false, { context_line })
+  -- Calculate token estimate for both the current buffer and the context files
+  local buf_lines = vim.api.nvim_buf_get_lines(current_tab.buf, 0, -1, false)
+  local buf_text = table.concat(buf_lines, ' ')
 
-  -- Highlight the context line
+  -- Concatenate all context file contents
+  local context_text = ''
+  for _, file in ipairs(context_files) do
+    local file_lines = vim.fn.readfile(file)
+    context_text = context_text .. table.concat(file_lines, ' ') .. ' '
+  end
+
+  local total_text = buf_text .. context_text
+  local token_estimate = math.floor(#total_text / 4)
+  local token_line = 'Token Estimate: ' .. token_estimate .. ' tokens'
+
+  -- Set context lines: one line for context and one for token estimate
+  vim.api.nvim_buf_set_lines(tab_buf, 1, 3, false, { context_line, token_line })
+
+  -- Highlight the context line and token line if desired
   vim.api.nvim_buf_add_highlight(tab_buf, namespace_id, 'Comment', 1, 0, -1)
+  vim.api.nvim_buf_add_highlight(tab_buf, namespace_id, 'Comment', 2, 0, -1)
 
   vim.api.nvim_buf_set_option(tab_buf, 'modifiable', false)
+end
+
+function M.popup_context_files()
+  local current_tab = state.tabs[state.current_tab]
+  if not current_tab.context_files or #current_tab.context_files == 0 then
+    vim.notify('No files in context, you dumbass!', vim.log.levels.WARN)
+    return
+  end
+
+  -- Create a scratch buffer for the popup
+  local buf = vim.api.nvim_create_buf(false, true)
+  local lines = {}
+  for i, file in ipairs(current_tab.context_files) do
+    lines[i] = vim.fn.fnamemodify(file, ':t')
+  end
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+
+  -- Calculate popup dimensions
+  local width = math.floor(vim.o.columns * 0.4)
+  local height = #lines > 0 and #lines or 1
+  local row = math.floor((vim.o.lines - height) / 2)
+  local col = math.floor((vim.o.columns - width) / 2)
+
+  -- Create the floating window with a border
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = 'editor',
+    width = width,
+    height = height,
+    row = row,
+    col = col,
+    style = 'minimal',
+    border = 'single',
+  })
+
+  -- Allow movement with j and k (they already work by default in normal mode)
+  -- Map 'd' to delete the selected file from context
+  vim.api.nvim_buf_set_keymap(buf, 'n', 'd', '', {
+    callback = function()
+      local cursor = vim.api.nvim_win_get_cursor(win)
+      local line = cursor[1]
+      local file_to_delete = current_tab.context_files[line]
+      if file_to_delete then
+        table.remove(current_tab.context_files, line)
+        vim.notify('Deleted file from context: ' .. file_to_delete .. ' 🤬', vim.log.levels.INFO)
+        -- Update the popup lines
+        local new_lines = {}
+        for i, f in ipairs(current_tab.context_files) do
+          new_lines[i] = vim.fn.fnamemodify(f, ':t')
+        end
+        vim.api.nvim_buf_set_option(buf, 'modifiable', true)
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, new_lines)
+        vim.api.nvim_buf_set_option(buf, 'modifiable', false)
+        -- Close the popup if there are no more files
+        if #current_tab.context_files == 0 then
+          vim.api.nvim_win_close(win, true)
+        end
+      else
+        vim.notify('Invalid selection, you stupid prick!', vim.log.levels.WARN)
+      end
+      render_tabs()
+    end,
+    noremap = true,
+    silent = true,
+  })
+
+  -- Map 'q' (or <Esc>) to close the popup
+  vim.api.nvim_buf_set_keymap(buf, 'n', 'q', '', {
+    callback = function()
+      vim.api.nvim_win_close(win, true)
+    end,
+    noremap = true,
+    silent = true,
+  })
+
+  -- Optional: Keep the popup modifiable for a brief moment if you want to refresh, then lock it down
+  vim.api.nvim_buf_set_option(buf, 'modifiable', false)
+  vim.cmd 'normal! gg'
 end
 
 function M.next_tab()
