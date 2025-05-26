@@ -118,7 +118,7 @@ local function render_tabs()
   for _, file in ipairs(context_files) do
     table.insert(filenames, vim.fn.fnamemodify(file, ':t'))
   end
-  local context_line = 'Context Files: ' .. (table.concat(filenames, ', ') ~= '' and table.concat(filenames, ', ') or 'None')
+  local context_line = 'Context Files: ' .. ((#filenames > 0 and table.concat(filenames, ', ')) or 'None')
 
   -- Set context line at the bottom of the buffer
   vim.api.nvim_buf_set_lines(tab_buf, 1, 2, false, { context_line })
@@ -203,6 +203,21 @@ function M.toggle_window()
     state.main_win = vim.api.nvim_get_current_win()
 
     M.create_or_update_window()
+
+    -- Automatically add the currently open file in your main window to context
+    local file_path = vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(state.main_win))
+    if file_path ~= '' then
+      local current_tab = state.tabs[state.current_tab]
+      if not vim.tbl_contains(current_tab.context_files, file_path) then
+        table.insert(current_tab.context_files, file_path)
+        vim.notify('Added current file to context: ' .. file_path, vim.log.levels.INFO)
+      else
+        vim.notify('File already in context: ' .. file_path, vim.log.levels.WARN)
+      end
+    else
+      vim.notify('No valid file found in the current window, you idiot!', vim.log.levels.WARN)
+    end
+
     render_tabs()
     local cursor_pos = state.cursor_positions[state.current_tab] or { 1, 0 }
     vim.api.nvim_win_set_cursor(state.win_obj.win, cursor_pos)
@@ -214,19 +229,19 @@ function M.select_files()
 
   local telescope_ok, telescope = pcall(require, 'telescope.builtin')
   if not telescope_ok then
-    vim.notify('Telescope is not installed', vim.log.levels.ERROR)
+    vim.notify('Telescope is not installed, dipshit!', vim.log.levels.ERROR)
     return
   end
 
   local actions_ok, actions = pcall(require, 'telescope.actions')
   if not actions_ok then
-    vim.notify('Telescope actions could not be loaded', vim.log.levels.ERROR)
+    vim.notify('Telescope actions could not be loaded, what the fuck!', vim.log.levels.ERROR)
     return
   end
 
   local action_state_ok, action_state = pcall(require, 'telescope.actions.state')
   if not action_state_ok then
-    vim.notify('Telescope actions.state could not be loaded', vim.log.levels.ERROR)
+    vim.notify('Telescope actions.state could not be loaded, seriously?', vim.log.levels.ERROR)
     return
   end
 

@@ -78,22 +78,34 @@ function M.get_prompt(opts)
       vim.api.nvim_win_set_cursor(0, { erow, ecol })
       vim.api.nvim_command 'normal! o'
     end
-  else
-    prompt = get_lines_until_cursor()
+    -- else
+    --   -- If no visual selection, get lines from the current tab buffer up to the cursor.
+    --   prompt = get_lines_until_cursor()
   end
 
   local current_tab = state.tabs[state.current_tab]
-  if current_tab or current_tab.context_files then
+  if current_tab then
     local context = {}
-    for _, filepath in ipairs(current_tab.context_files) do
-      local file_content = vim.fn.readfile(filepath)
-      if file_content then
-        table.insert(context, '### ' .. filepath .. '\\n' .. table.concat(file_content, '\\n'))
-      else
-        vim.notify('Failed to read file: ' .. filepath, vim.log.levels.ERROR)
+
+    -- Add context files from the current tab, if any
+    if current_tab.context_files then
+      for _, filepath in ipairs(current_tab.context_files) do
+        local file_content = vim.fn.readfile(filepath)
+        if file_content then
+          table.insert(context, '### ' .. filepath .. ':\n' .. table.concat(file_content, '\n'))
+        else
+          vim.notify('Failed to read file: ' .. filepath, vim.log.levels.ERROR)
+        end
       end
     end
-    -- Combine context and prompt
+    --
+    -- Add current tab's entire buffer as context
+    local current_buf = current_tab.buf
+    local buf_content = vim.api.nvim_buf_get_lines(current_buf, 0, -1, true)
+    if buf_content and #buf_content > 0 then
+      table.insert(context, '### PROMPT:\n' .. table.concat(buf_content, '\n'))
+    end
+
     prompt = table.concat(context, '\n\n') .. '\n\n' .. prompt
   end
 
