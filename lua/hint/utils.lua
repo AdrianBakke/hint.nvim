@@ -1,6 +1,7 @@
 local M = {}
 
 local state_module = require 'hint.state'
+local state = state_module.state
 
 function M.get_api_key(name)
   return os.getenv(name)
@@ -45,15 +46,15 @@ function M.get_visual_selection()
 end
 
 function get_lines_until_cursor()
-  print(state_module.state.main_win)
-  local main_buf = vim.api.nvim_win_get_buf(state_module.state.main_win)
-  local cursor_pos = vim.api.nvim_win_get_cursor(state_module.state.main_win)
+  --print(state.main_win)
+  local main_buf = vim.api.nvim_win_get_buf(state.main_win)
+  local cursor_pos = vim.api.nvim_win_get_cursor(state.main_win)
   local end_row = cursor_pos[1]
 
   local lines = vim.api.nvim_buf_get_lines(main_buf, 0, end_row, true)
 
-  if state_module.state.tabs and vim.api.nvim_buf_is_valid(state_module.state.tabs[state_module.state.current_tab].buf) then
-    local buff_lines = vim.api.nvim_buf_get_lines(state_module.state.tabs[state_module.state.current_tab].buf, 0, -1, true)
+  if state.tabs and vim.api.nvim_buf_is_valid(state.tabs[state.current_tab].buf) then
+    local buff_lines = vim.api.nvim_buf_get_lines(state.tabs[state.current_tab].buf, 0, -1, true)
     table.insert(lines, '') -- add a separator
     vim.list_extend(lines, buff_lines)
   end
@@ -81,16 +82,31 @@ function M.get_prompt(opts)
     prompt = get_lines_until_cursor()
   end
 
+  local current_tab = state.tabs[state.current_tab]
+  if current_tab or current_tab.context_files then
+    local context = {}
+    for _, filepath in ipairs(current_tab.context_files) do
+      local file_content = vim.fn.readfile(filepath)
+      if file_content then
+        table.insert(context, '### ' .. filepath .. '\\n' .. table.concat(file_content, '\\n'))
+      else
+        vim.notify('Failed to read file: ' .. filepath, vim.log.levels.ERROR)
+      end
+    end
+    -- Combine context and prompt
+    prompt = table.concat(context, '\n\n') .. '\n\n' .. prompt
+  end
+
   return prompt
 end
 
 function M.write_to_window(str)
   vim.schedule(function()
-    if not state_module.state.win_obj or not vim.api.nvim_win_is_valid(state_module.state.win_obj.win) then
+    if not state.win_obj or not vim.api.nvim_win_is_valid(state.win_obj.win) then
       M.create_or_update_window()
     end
 
-    local active_tab = state_module.state.tabs[state_module.state.current_tab]
+    local active_tab = state.tabs[state.current_tab]
     if not active_tab or not vim.api.nvim_buf_is_valid(active_tab.buf) then
       return
     end
@@ -115,13 +131,13 @@ function M.write_to_window(str)
       end
     end
 
-    print(vim.inspect(state_module))
+    -- print(vim.inspect(state_module))
     --local ns = namespace_id
     for i = before_line, current_line_count - 1 do
       vim.api.nvim_buf_add_highlight(buf, -1, 'NormalFloat', i, 0, -1) -- -1 now should be namespace id?
     end
 
-    vim.api.nvim_win_set_cursor(state_module.state.win_obj.win, { current_line_count, 0 })
+    vim.api.nvim_win_set_cursor(state.win_obj.win, { current_line_count, 0 })
   end)
 end
 
