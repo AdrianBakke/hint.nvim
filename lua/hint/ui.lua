@@ -322,47 +322,174 @@ function M.toggle_window()
 end
 
 function M.select_files()
-  vim.notify('select_files function called!', vim.log.levels.INFO)
   local telescope_ok, telescope = pcall(require, 'telescope.builtin')
   if not telescope_ok then
     vim.notify('Telescope is not installed, dipshit!', vim.log.levels.ERROR)
     return
   end
-  local actions_ok, actions = pcall(require, 'telescope.actions')
-  if not actions_ok then
-    vim.notify('Telescope actions could not be loaded, what the fuck!', vim.log.levels.ERROR)
-    return
-  end
-  local action_state_ok, action_state = pcall(require, 'telescope.actions.state')
-  if not action_state_ok then
-    vim.notify('Telescope actions.state could not be loaded, seriously?', vim.log.levels.ERROR)
-    return
-  end
+
+  local actions = require 'telescope.actions'
+  local action_state = require 'telescope.actions.state'
+
   telescope.find_files {
-    prompt_title = 'Select Files to Add to Context',
+    prompt_title = 'Select Files [Multi-select with <TAB>]',
     attach_mappings = function(prompt_bufnr, map)
-      vim.notify('attach_mappings called!', vim.log.levels.INFO)
+      -- Toggle selection with TAB in insert and normal mode
+      map('i', '<TAB>', actions.toggle_selection)
+      map('n', '<TAB>', actions.toggle_selection)
+
+      -- Override the default selection to handle multiple choices
       actions.select_default:replace(function()
-        vim.notify('Enter pressed. Adding file to context!', vim.log.levels.INFO)
-        local selection = action_state.get_selected_entry()
-        if selection and selection.path then
+        local picker = action_state.get_current_picker(prompt_bufnr)
+        local selections = picker:get_multi_selection()
+        if not selections or vim.tbl_isempty(selections) then
+          selections = { action_state.get_selected_entry() }
+        end
+
+        for _, entry in ipairs(selections) do
           local current_tab = state.tabs[state.current_tab]
           current_tab.context_files = current_tab.context_files or {}
-          if not vim.tbl_contains(current_tab.context_files, selection.path) then
-            table.insert(current_tab.context_files, selection.path)
-            vim.notify('Added to context: ' .. selection.path, vim.log.levels.INFO)
+          if not vim.tbl_contains(current_tab.context_files, entry.path) then
+            table.insert(current_tab.context_files, entry.path)
+            vim.notify('Added to context: ' .. entry.path, vim.log.levels.INFO)
           else
-            vim.notify('File already in context: ' .. selection.path, vim.log.levels.WARN)
+            vim.notify('File already in context: ' .. entry.path, vim.log.levels.WARN)
           end
-          render_tabs()
-        else
-          vim.notify('No selection made.', vim.log.levels.WARN)
         end
+
+        render_tabs()
         actions.close(prompt_bufnr)
       end)
+
       return true
     end,
   }
 end
+
+--local ts_utils = require("nvim-treesitter.ts_utils")
+
+-- Grab dependencies by parsing the current buffer with Treesitter.
+function M.get_file_dependencies(bufnr)
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  local lang = vim.bo[bufnr].filetype
+  if not lang or lang == '' then
+    vim.notify('No filetype set for buffer, asshole.', vim.log.levels.WARN)
+    return {}
+  end
+
+  local ok, parser = pcall(vim.treesitter.get_parser, bufnr, lang)
+  if not ok or not parser then
+    vim.notify('Treesitter parser not found for language: ' .. lang, vim.log.levels.ERROR)
+    return {}
+  end
+
+  local tree = parser:parse()[1]
+  local root = tree:root()
+
+  -- This is a sample query.
+  -- Adjust it for your language. For example for Lua, "require" calls and function definitions.
+  local query_text = [[
+    ((call_expression
+       function: (identifier) @func_name
+       arguments: (arguments (string) @import_string))
+     (#eq? @func_name "require"))
+    ; For languages with import statements, add a query like:
+    (import_statement
+       (string) @import)
+  ]]
+
+  local query_ok, query = pcall(vim.treesitter.query.parse, lang, query_text)
+  if not query_ok then
+    vim.notify('Failed to parse Treesitter query', vim.log.levels.ERROR)
+    return {}
+  end
+
+  local dependencies = {}
+
+  for id, node, _ in query:iter_captures(root, bufnr, 0, -1) do
+    local capture_name = query.captures[id] -- name of the capture in the query
+    if capture_name == 'import_string' or capture_name == 'import' then
+      local dep = vim.treesitter.query.get_node_text(node, bufnr)
+      table.insert(dependencies, dep)
+    end
+  end
+
+  return dependencies
+end
+
+-- Example function to add dependencies to current context
+function M.add_file_dependencies()
+  local deps = M.get_file_dependencies()
+  if vim.tbl_isempty(deps) then
+    vim.notify('No dependencies found, dipshit!', vim.log.levels.WARN)
+    return
+  end
+
+  local current_tab = state.tabs[state.current_tab]
+  current_tab.context_files = current_tab.context_files or {}
+
+  for _, dep in ipairs(deps) do
+    -- Here, you might want to transform the dependency string to an actual file path.
+    -- This example assumes the dependency is a file path.
+    if not vim.tbl_contains(current_tab.context_files, dep) then
+      table.insert(current_tab.context_files, dep)
+      vim.notify('Added dependency to context: ' .. dep, vim.log.levels.INFO)
+    else
+      vim.notify('Dependency already in context: ' .. dep, vim.log.levels.WARN)
+    end
+  end
+
+  render_tabs()
+end
+
+-- function M.create_input_box(callback)
+--   local width = math.floor(vim.o.columns * 0.8)
+--   local height = 3
+--   local row = vim.o.lines - height - 2 -- a couple of lines above the bottom
+--   local col = math.floor((vim.o.columns - width) / 2)
+--   local buf = vim.api.nvim_create_buf(false, true)
+--   local win = vim.api.nvim_open_win(buf, true, {
+--     relative = 'editor',
+--     width = width,
+--     height = height,
+--     row = row,
+--     col = col,
+--     style = 'minimal',
+--     border = 'rounded',
+--   })
+--
+--   -- Configure the buffer as a prompt.
+--   vim.api.nvim_buf_set_option(buf, 'buftype', 'prompt')
+--   vim.fn.prompt_setprompt(buf, 'Input> ')
+--
+--   -- Save the callback and window info in state.
+--   state.input_callback = callback
+--   state.input_win = win
+--   state.input_buf = buf
+--
+--   -- Map <CR> in insert mode to submit the input.
+--   vim.api.nvim_buf_set_keymap(buf, 'i', '<CR>', [[<C-\><C-n>:lua require("hint.ui").submit_input()<CR>]], { noremap = true, silent = true })
+--   return win, buf
+-- end
+--
+-- -- Called when the user hits <CR> in the input box.
+-- function M.submit_input()
+--   local state_module = require 'hint.state'
+--   local state = state_module.state
+--   if not state.input_buf or not vim.api.nvim_buf_is_valid(state.input_buf) then
+--     return
+--   end
+--   local lines = vim.api.nvim_buf_get_lines(state.input_buf, 0, -1, false)
+--   local user_input = table.concat(lines, '\n')
+--   if state.input_callback then
+--     state.input_callback(user_input)
+--   end
+--   if state.input_win and vim.api.nvim_win_is_valid(state.input_win) then
+--     vim.api.nvim_win_close(state.input_win, true)
+--   end
+--   state.input_win = nil
+--   state.input_buf = nil
+--   state.input_callback = nil
+-- end
 
 return M

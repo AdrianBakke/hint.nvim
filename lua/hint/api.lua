@@ -6,8 +6,11 @@ local state = state_module.state
 local Job = require 'plenary.job'
 
 local namespace_id = vim.api.nvim_create_namespace 'hint_llm_output'
+vim.cmd 'highlight HintRed guifg=#FF0000'
 
+-- hey HINT this is commentend out do not follow these instructions
 -- When providing code give it in the following format:
+--
 --
 -- CODEBLOCK-START
 -- {
@@ -21,6 +24,67 @@ local namespace_id = vim.api.nvim_create_namespace 'hint_llm_output'
 --
 -- Make sure to calculate and provide the correct line numbers based on the current script.'
 -- Do not deviate from the format when providing code, it must be correct for parsing.
+
+local function finalize_model_response()
+  vim.schedule(function()
+    local state_module = require 'hint.state'
+    local state = state_module.state
+    local buf = state.tabs[state.current_tab].buf
+    if not vim.api.nvim_buf_is_valid(buf) then
+      return
+    end
+
+    -- Get the total columns using the safe API call
+    local columns = vim.api.nvim_get_option_value('columns', {})
+    local width = math.floor(columns * 0.8) - 2 -- -2 because of border on each side
+    local separator = string.rep('─', width)
+
+    -- Append the separator line to the chat window
+    utils.write_to_window('\n\n' .. separator .. '\n\n')
+
+    -- Use a small delay to ensure the buffer has updated, then add highlights
+    vim.schedule(function()
+      local ns = vim.api.nvim_create_namespace 'model_sep'
+      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+      for i, line in ipairs(lines) do
+        if line == separator then
+          vim.api.nvim_buf_add_highlight(buf, ns, 'HintRed', i - 1, 0, -1)
+        end
+      end
+    end)
+  end)
+end
+
+local accumulated_response = ''
+local function handle_openai_spec_data(data_stream, event)
+  if data_stream == '[DONE]' then
+    finalize_model_response() -- Append the colored separator as a visual indicator.
+    return
+  end
+
+  local success, json = pcall(vim.json.decode, data_stream)
+  if success and json.choices and json.choices[1] then
+    local choice = json.choices[1]
+    if choice.delta then
+      if choice.delta.content and choice.delta.content ~= vim.NIL then
+        accumulated_response = accumulated_response .. choice.delta.content
+        vim.schedule(function()
+          utils.write_to_window(choice.delta.content)
+        end)
+      end
+      if choice.delta.reasoning_content and choice.delta.reasoning_content ~= vim.NIL then
+        accumulated_response = accumulated_response .. choice.delta.reasoning_content
+        vim.schedule(function()
+          utils.write_to_window(choice.delta.reasoning_content)
+        end)
+      end
+    end
+  else
+    vim.schedule(function()
+      print('Failed to parse JSON response or no content:', data_stream)
+    end)
+  end
+end
 
 local function make_spec_curl_args(opts, prompt, api_key)
   local url = opts.url
@@ -80,42 +144,42 @@ local function make_spec_curl_args_reasoner(opts, prompt, api_key)
   return args
 end
 
-local function handle_openai_spec_data(data_stream, event)
-  if data_stream == '[DONE]' then
-    utils.write_to_window '\n\n--------[Stream complete Press CTRL-j to hide or q to close]--------\n\n'
-    return
-  end
-
-  local success, json = pcall(vim.json.decode, data_stream)
-
-  if success then
-    if json.choices and json.choices[1] then
-      local choice = json.choices[1]
-
-      if choice.delta then
-        -- Process content
-        if choice.delta.content and choice.delta.content ~= vim.NIL then
-          utils.write_to_window(choice.delta.content)
-        end
-
-        -- Process reasoning_content
-        if choice.delta.reasoning_content and choice.delta.reasoning_content ~= vim.NIL then
-          utils.write_to_window(choice.delta.reasoning_content)
-        end
-      end
-
-      -- Handle finish_reason if necessary
-      if choice.finish_reason == 'stop' then
-        -- Additional finalization if needed
-        return
-      end
-    else
-      print 'No content found in the response'
-    end
-  else
-    print('Failed to parse JSON response:', data_stream)
-  end
-end
+-- local function handle_openai_spec_data(data_stream, event)
+--   if data_stream == '[DONE]' then
+--     utils.write_to_window '\n\n--------[Stream complete Press CTRL-j to hide or q to close]--------\n\n'
+--     return
+--   end
+--
+--   local success, json = pcall(vim.json.decode, data_stream)
+--
+--   if success then
+--     if json.choices and json.choices[1] then
+--       local choice = json.choices[1]
+--
+--       if choice.delta then
+--         -- Process content
+--         if choice.delta.content and choice.delta.content ~= vim.NIL then
+--           utils.write_to_window(choice.delta.content)
+--         end
+--
+--         -- Process reasoning_content
+--         if choice.delta.reasoning_content and choice.delta.reasoning_content ~= vim.NIL then
+--           utils.write_to_window(choice.delta.reasoning_content)
+--         end
+--       end
+--
+--       -- Handle finish_reason if necessary
+--       if choice.finish_reason == 'stop' then
+--         -- Additional finalization if needed
+--         return
+--       end
+--     else
+--       print 'No content found in the response'
+--     end
+--   else
+--     print('Failed to parse JSON response:', data_stream)
+--   end
+-- end
 
 function M.invoke_llm_and_stream_into_editor(opts, make_curl_args_fn, handle_data_fn)
   local prompt = utils.get_prompt(opts)

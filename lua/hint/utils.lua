@@ -46,7 +46,6 @@ function M.get_visual_selection()
 end
 
 function get_lines_until_cursor()
-  --print(state.main_win)
   local main_buf = vim.api.nvim_win_get_buf(state.main_win)
   local cursor_pos = vim.api.nvim_win_get_cursor(state.main_win)
   local end_row = cursor_pos[1]
@@ -125,10 +124,6 @@ function M.write_to_window(str)
 
     local buf = active_tab.buf
 
-    if string.find(str, '^```') then
-      str = '\n' .. str
-    end
-
     local current_line_count = vim.api.nvim_buf_line_count(buf)
     local before_line = current_line_count
 
@@ -141,11 +136,6 @@ function M.write_to_window(str)
         vim.api.nvim_buf_set_lines(buf, current_line_count, current_line_count, false, { line })
         current_line_count = current_line_count + 1
       end
-    end
-
-    --local ns = namespace_id
-    for i = before_line, current_line_count - 1 do
-      vim.api.nvim_buf_add_highlight(buf, -1, 'NormalFloat', i, 0, -1) -- -1 now should be namespace id?
     end
 
     vim.api.nvim_win_set_cursor(state.win_obj.win, { current_line_count, 0 })
@@ -161,7 +151,6 @@ function M.parse_code_block(text)
   end
 
   local t = vim.json.decode(codeblock_str)
-  --print(vim.inspect(t))
 end
 
 return M
