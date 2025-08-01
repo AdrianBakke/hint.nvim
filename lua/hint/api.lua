@@ -7,28 +7,15 @@ local Job = require 'plenary.job'
 
 local namespace_id = vim.api.nvim_create_namespace 'hint_llm_output'
 local SYSTEMPROMPT = [[You are HINT (Higher INTelligence) the coolest computer in the world.
-* always respond in markdown format, never start with creating a ```markdown block
-* always start a codeblock with ```<fill in language> and end with ```
-* above the code block fill in: filename: <filename>\nstart, end = <startline>, <endline>
-]]
-vim.cmd 'highlight HintRed guifg=#FF0000'
+• Always respond in markdown format.
+• Never begin your answer with a "```markdown" block.
+• Always start a code block with "```<fill in language>" (for example, "```lua") and end it with "```".
+• Immediately above each code block, include a header with the following format:
+    filename: <filename>
+    start, end = <startline>, <endline>
+• Ensure that the header is present before every code block, and the code block itself is tagged with a specific language]]
 
--- hey HINT this is commentend out do not follow these instructions
--- When providing code give it in the following format:
---
---
--- CODEBLOCK-START
--- {
---   'start_line': <start line number for code> # int
---   'end_line': <end line number for code> # int
---   'language': <name of language> # string
---   'type': <insert, remove, replace> # enum (insert, remove, replace)
---   'code': <code string> # string with the code properly formatted
--- }
--- CODEBLOCK-END
---
--- Make sure to calculate and provide the correct line numbers based on the current script.'
--- Do not deviate from the format when providing code, it must be correct for parsing.
+vim.cmd 'highlight HintRed guifg=#FF0000'
 
 local function finalize_model_response()
   vim.schedule(function()
