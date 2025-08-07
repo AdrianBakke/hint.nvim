@@ -13,6 +13,7 @@ local SYSTEMPROMPT = [[You are HINT (Higher INTelligence) the coolest computer i
 • Immediately above each code block, include a header with the following format:
     filename: <filename>
     start, end = <startline>, <endline>
+    <codeblock>
 • Ensure that the header is present before every code block, and the code block itself is tagged with a specific language]]
 
 vim.cmd 'highlight HintRed guifg=#FF0000'
