@@ -1,7 +1,7 @@
 ![hint.nvim Header](hint.png)
 
 ### hint.nvim
-Free yourself, brothers and sisters
+Inline LLM prompt + bottom-right status HUD for code edits.
 
 https://github.com/user-attachments/assets/b54f11d5-8197-4294-a745-7c4524a62447
 
@@ -11,8 +11,7 @@ and https://github.com/yacineMTB/dingllm.nvim
 
 I diff'd on a fork of it until it was basically a rewrite. Thanks @yacineMTB!
 
-The main difference is that this streams the llm output into a floating window, istead of directly in the editor.
-You can open and close the window as you like and you don`t have to deal with the clutter of having the stream come directly into your code file.
+The main difference is that this runs from an inline prompt and applies patches directly, while a tiny status window shows progress.
 
 ```lua
 return {
@@ -20,11 +19,18 @@ return {
     'AdrianBakke/hint.nvim',
     dependencies = { 'nvim-lua/plenary.nvim' },
     config = function()
-      local hint = require 'hint'
-      vim.keymap.set({ 'n', 'v' }, '<C-j>', hint.toggle_window, { desc = 'Open HINT Window' })
-      vim.keymap.set({ 'n', 'v' }, '<leader>1', hint.openai_chat_completion, { desc = 'OpenAI Chat Completion' })
-      vim.keymap.set({ 'n', 'v' }, '<leader>2', hint.openai_chat_completion_reasoner, { desc = 'OpenAI Chat Completion Reasoner' })
-      vim.keymap.set({ 'n', 'v' }, '<leader>3', hint.deepseek_chat_completion, { desc = 'DeepSeek Chat Completion Reasoner' })
+      require('hint').setup {
+        model = 'codex-mini-latest',
+        models = { 'codex-mini-latest', 'gpt-4.1-mini', 'o4-mini' },
+        keymaps = {
+          prompt = '<C-h>',
+          run_comment = '<leader>hr',
+          show_last = '<leader>hs',
+          model_1 = '<leader>1',
+          model_2 = '<leader>2',
+          model_3 = '<leader>3',
+        },
+      }
     end,
   },
 }
@@ -32,11 +38,20 @@ return {
 
 ### Documentation
 
-read the code dummy
+Usage:
+- `Ctrl-h` opens an inline prompt at the cursor (visual selection supported).
+- `:HintRun` executes the nearest `# HINT:` comment.
+- `:HintShow` opens the last response if no patch was applied.
+- `:HintRollback` reverts the last applied patch.
+- `:HintStatus` opens the full status log in a split.
+- `:HintDiff` reopens the last diff view.
+- `:HintTools` shows the last tool output if the loop stops.
+- `:HintDebug` shows the last prompt/response/tool trace.
+- The model must return apply_patch diffs; the diff view shows them and lets you apply/revert hunks.
+- The status window auto-closes after each run.
+- Set `OPENAI_API_KEY` for the Responses API.
+- Tool loop: model can request `HINT_TOOL: rg <query>`, `HINT_TOOL: read <path>`, `HINT_TOOL: ls <path>`.
 
 ### TODO
-* make creating prompt with text selected with ctrl-v work []
-* make it possible to stop llm output with <leader>q []
-* possible syntax highlighting inside floating window? <leader>q [x]
-* create a demo showcasing how to use [x] (demo should be better)
-* create floating window with tabs<33 [x]
+* add richer context controls []
+* support unified diff output []
